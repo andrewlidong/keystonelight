@@ -113,6 +113,10 @@ mod tests {
         store.set("data".to_string(), value);
 
         // Test nested access
+        assert_eq!(
+            store.get("data.user.name"),
+            Some(&Value::String("John Doe".to_string()))
+        );
         assert_eq!(store.get("data.user.name"), Some(&Value::String("John Doe".to_string())));
         assert_eq!(store.get("data.user.age"), Some(&Value::Integer(30)));
         assert_eq!(store.get("data.user.address.city"), Some(&Value::String("New York".to_string())));

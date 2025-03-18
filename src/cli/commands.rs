@@ -56,17 +56,22 @@ pub fn print_usage() {
 }
 
 /// Handles the SET command
-pub fn handle_set(store: &mut Store, key: &str, value: &str, store_path: &Path) -> Result<(), StoreError> {
+pub fn handle_set(
+    store: &mut Store,
+    key: &str,
+    value: &str,
+    store_path: &Path,
+) -> Result<(), StoreError> {
     match parse_value(value) {
         Ok(parsed_value) => {
             store.set(key.to_string(), parsed_value);
-            println!("Value set successfully!");
             store.save(store_path)?;
+            println!("Value set successfully");
             Ok(())
         }
         Err(e) => {
             println!("Error parsing value: {}", e);
-            Ok(())
+            Err(e)
         }
     }
 }
@@ -94,9 +99,9 @@ pub fn handle_delete(store: &mut Store, key: &str, store_path: &Path) -> Result<
 /// Handles the LIST command
 pub fn handle_list(store: &Store) {
     if store.is_empty() {
-        println!("Store is empty!");
+        println!("Store is empty");
     } else {
-        println!("Current key-value pairs:");
+        println!("Store contents:");
         for (key, value) in store.iter() {
             println!("  {} => {}", key, value);
         }
