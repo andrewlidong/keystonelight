@@ -1,14 +1,9 @@
-use std::io::{self, Write, BufRead};
-use std::path::Path;
-use keystonelight::Store;
 use keystonelight::cli::{
-    parse_input,
-    print_usage,
-    handle_set,
-    handle_get,
-    handle_delete,
-    handle_list,
+    handle_delete, handle_get, handle_list, handle_set, parse_input, print_usage,
 };
+use keystonelight::Store;
+use std::io::{self, BufRead, Write};
+use std::path::Path;
 
 #[cfg(test)]
 mod tests {
@@ -24,19 +19,22 @@ mod tests {
     #[test]
     fn test_basic_operations() {
         let mut store = Store::new();
-        
+
         // Test set and get
         store.set("key1".to_string(), Value::String("value1".to_string()));
-        assert_eq!(store.get("key1"), Some(&Value::String("value1".to_string())));
-        
+        assert_eq!(
+            store.get("key1"),
+            Some(&Value::String("value1".to_string()))
+        );
+
         // Test overwrite
         store.set("key1".to_string(), Value::Integer(42));
         assert_eq!(store.get("key1"), Some(&Value::Integer(42)));
-        
+
         // Test delete
         assert_eq!(store.delete("key1"), Some(Value::Integer(42)));
         assert_eq!(store.get("key1"), None);
-        
+
         // Test delete non-existent key
         assert_eq!(store.delete("nonexistent"), None);
     }
@@ -46,8 +44,14 @@ mod tests {
         let mut store = Store::new();
 
         // Test string with spaces
-        store.set("string".to_string(), Value::String("Hello, World!".to_string()));
-        assert_eq!(store.get("string"), Some(&Value::String("Hello, World!".to_string())));
+        store.set(
+            "string".to_string(),
+            Value::String("Hello, World!".to_string()),
+        );
+        assert_eq!(
+            store.get("string"),
+            Some(&Value::String("Hello, World!".to_string()))
+        );
 
         // Test integers
         store.set("int".to_string(), Value::Integer(42));
@@ -76,7 +80,7 @@ mod tests {
             Value::Integer(1),
             Value::String("two".to_string()),
             Value::Boolean(true),
-            Value::Null
+            Value::Null,
         ]);
         store.set("array".to_string(), array.clone());
         assert_eq!(store.get("array"), Some(&array));
@@ -87,7 +91,7 @@ mod tests {
     #[test]
     fn test_nested_objects() -> Result<(), StoreError> {
         let mut store = Store::new();
-        
+
         // Test deeply nested object
         let complex_json = r#"{
             "user": {
@@ -108,7 +112,7 @@ mod tests {
                 ]
             }
         }"#;
-        
+
         let value = serde_json::from_str(complex_json)?;
         store.set("data".to_string(), value);
 
@@ -117,10 +121,19 @@ mod tests {
             store.get("data.user.name"),
             Some(&Value::String("John Doe".to_string()))
         );
-        assert_eq!(store.get("data.user.name"), Some(&Value::String("John Doe".to_string())));
+        assert_eq!(
+            store.get("data.user.name"),
+            Some(&Value::String("John Doe".to_string()))
+        );
         assert_eq!(store.get("data.user.age"), Some(&Value::Integer(30)));
-        assert_eq!(store.get("data.user.address.city"), Some(&Value::String("New York".to_string())));
-        assert_eq!(store.get("data.user.address.coordinates.lat"), Some(&Value::Float(40.7128)));
+        assert_eq!(
+            store.get("data.user.address.city"),
+            Some(&Value::String("New York".to_string()))
+        );
+        assert_eq!(
+            store.get("data.user.address.coordinates.lat"),
+            Some(&Value::Float(40.7128))
+        );
 
         // Test non-existent paths
         assert_eq!(store.get("data.user.nonexistent"), None);
@@ -152,9 +165,15 @@ mod tests {
         // Load and verify all data types are preserved
         {
             let store = Store::load(&file_path)?;
-            assert_eq!(store.get("string"), Some(&Value::String("value1".to_string())));
+            assert_eq!(
+                store.get("string"),
+                Some(&Value::String("value1".to_string()))
+            );
             assert_eq!(store.get("int"), Some(&Value::Integer(42)));
-            assert_eq!(store.get("object.name"), Some(&Value::String("test".to_string())));
+            assert_eq!(
+                store.get("object.name"),
+                Some(&Value::String("test".to_string()))
+            );
             assert_eq!(store.get("object.value"), Some(&Value::Boolean(true)));
         }
 
@@ -166,7 +185,7 @@ mod tests {
         // Test invalid JSON
         let invalid_json = "{invalid_json}";
         assert!(serde_json::from_str::<Value>(invalid_json).is_err());
-        
+
         // Test invalid file operations
         let store = Store::new();
         assert!(store.save(Path::new("/nonexistent/path/file.db")).is_err());
@@ -177,19 +196,22 @@ mod tests {
     fn test_input_parsing() {
         // Test basic command parsing
         assert_eq!(parse_input("SET key value"), vec!["SET", "key", "value"]);
-        
+
         // Test quoted strings
-        assert_eq!(parse_input("SET name \"John Doe\""), vec!["SET", "name", "\"John Doe\""]);
-        
+        assert_eq!(
+            parse_input("SET name \"John Doe\""),
+            vec!["SET", "name", "\"John Doe\""]
+        );
+
         // Test JSON objects
         assert_eq!(
             parse_input("SET user {\"name\": \"John\"}"),
             vec!["SET", "user", "{\"name\": \"John\"}"]
         );
-        
+
         // Test empty input
         assert_eq!(parse_input(""), Vec::<String>::new());
-        
+
         // Test multiple spaces
         assert_eq!(parse_input("GET    key"), vec!["GET", "key"]);
     }

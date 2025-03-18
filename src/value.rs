@@ -1,17 +1,17 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum Value {
-    String(String),
+    Null,
+    Boolean(bool),
     Integer(i64),
     Float(f64),
-    Boolean(bool),
+    String(String),
     Array(Vec<Value>),
     Object(HashMap<String, Value>),
-    Null,
 }
 
 impl Value {
@@ -36,14 +36,16 @@ impl Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::String(s) => write!(f, "{}", s),
+            Value::String(s) => write!(f, "\"{}\"", s),
             Value::Integer(i) => write!(f, "{}", i),
-            Value::Float(fl) => write!(f, "{}", fl),
+            Value::Float(n) => write!(f, "{}", n),
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Array(arr) => {
                 write!(f, "[")?;
                 for (i, val) in arr.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")? }
+                    if i > 0 {
+                        write!(f, ", ")?
+                    }
                     write!(f, "{}", val)?;
                 }
                 write!(f, "]")
@@ -51,7 +53,9 @@ impl fmt::Display for Value {
             Value::Object(map) => {
                 write!(f, "{{")?;
                 for (i, (key, val)) in map.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")? }
+                    if i > 0 {
+                        write!(f, ", ")?
+                    }
                     write!(f, "\"{}\": {}", key, val)?;
                 }
                 write!(f, "}}")
@@ -59,4 +63,4 @@ impl fmt::Display for Value {
             Value::Null => write!(f, "null"),
         }
     }
-} 
+}

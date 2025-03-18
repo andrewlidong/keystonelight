@@ -1,5 +1,5 @@
 pub mod commands;
 pub mod parser;
 
-pub use commands::{print_usage, parse_value, handle_set, handle_get, handle_delete, handle_list};
-pub use parser::parse_input; 
+pub use commands::{handle_delete, handle_get, handle_list, handle_set, parse_value, print_usage};
+pub use parser::parse_input;

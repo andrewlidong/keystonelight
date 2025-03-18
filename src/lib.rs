@@ -1,16 +1,18 @@
-//! KeystoneLight - A lightweight key-value store with support for nested objects and multiple data types
+//! KeystoneLight is a lightweight key-value store with support for multiple data types,
+//! nested object access, persistence to disk, and a JSON-compatible format.
 //!
-//! KeystoneLight is a flexible key-value store that supports:
-//! - Multiple data types (strings, integers, floats, booleans, arrays, objects)
+//! # Features
+//!
+//! - Support for multiple data types (strings, numbers, booleans, null, arrays, objects)
 //! - Nested object access using dot notation
-//! - Persistence to disk
-//! - JSON-compatible data format
+//! - Persistence to disk in JSON format
+//! - Command-line interface
+//! - Error handling with custom error types
 //!
 //! # Examples
 //!
 //! ```rust
 //! use keystonelight::{Store, Value};
-//! use std::path::Path;
 //!
 //! // Create a new store
 //! let mut store = Store::new();
@@ -34,34 +36,29 @@
 //! );
 //!
 //! // Save to disk
-//! store.save(Path::new("store.db")).unwrap();
+//! store.save("data.db").unwrap();
 //!
 //! // Load from disk
-//! let loaded_store = Store::load(Path::new("store.db")).unwrap();
-//! assert_eq!(loaded_store.get("name"), store.get("name"));
+//! let loaded_store = Store::load("data.db").unwrap();
 //! ```
 //!
 //! # Architecture
 //!
-//! KeystoneLight is built with a modular architecture:
-//!
-//! - `Store`: The main storage engine that manages key-value pairs
-//! - `Value`: An enum representing different supported data types
-//! - `StoreError`: Custom error types for the library
-//! - `cli`: Command-line interface components
+//! The library is organized into several modules:
+//! - `Store`: Core storage engine with CRUD operations
+//! - `Value`: Enum representing different value types
+//! - `StoreError`: Custom error types
+//! - `cli`: Command-line interface utilities
 //!
 //! # Error Handling
 //!
-//! The library uses custom error types to handle various failure cases:
-//!
-//! - IO errors during file operations
-//! - Serialization errors for JSON data
-//! - Key errors for invalid operations
+//! The library uses custom error types for handling I/O and serialization errors.
+//! All operations that can fail return a `Result<T, StoreError>`.
 //!
 //! # Thread Safety
 //!
-//! The current implementation is not thread-safe. When using KeystoneLight in a
-//! multi-threaded context, ensure proper synchronization is implemented.
+//! The current implementation is not thread-safe. If you need to share the store
+//! between threads, you should wrap it in a synchronization primitive like `Mutex`.
 
 pub mod cli;
 pub mod error;
@@ -70,4 +67,4 @@ pub mod value;
 
 pub use error::StoreError;
 pub use store::Store;
-pub use value::Value; 
+pub use value::Value;

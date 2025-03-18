@@ -1,10 +1,10 @@
+use crate::error::StoreError;
+use crate::value::Value;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
-use serde::{Serialize, Deserialize};
-use crate::error::StoreError;
-use crate::value::Value;
 
 /// Core storage engine for KeystoneLight
 #[derive(Serialize, Deserialize, Debug)]
@@ -13,58 +13,51 @@ pub struct Store {
 }
 
 impl Store {
-    /// Creates a new empty KeystoneLight store
+    /// Creates a new empty store
     pub fn new() -> Self {
         Store {
             data: HashMap::new(),
         }
     }
 
-    /// Loads a KeystoneLight store from the specified path
+    /// Loads a store from a file
     pub fn load(path: &Path) -> Result<Self, StoreError> {
         let mut file = File::open(path)?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
-        
+
         if contents.is_empty() {
             return Ok(Store::new());
         }
-        
+
         let store = serde_json::from_str(&contents)?;
         Ok(store)
     }
 
-    /// Saves the store to the specified path
+    /// Saves the store to a file
     pub fn save(&self, path: &Path) -> Result<(), StoreError> {
-        let encoded = serde_json::to_string_pretty(self)?;
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .open(path)?;
-        file.write_all(encoded.as_bytes())?;
+
+        let json = serde_json::to_string_pretty(self)?;
+        write!(&file, "{}", json)?;
         Ok(())
     }
 
-    /// Sets a value for the given key
+    /// Sets a value in the store
     pub fn set(&mut self, key: String, value: Value) {
         self.data.insert(key, value);
     }
 
-    /// Gets a value for the given key, supporting nested access with dot notation
+    /// Gets a value from the store
     pub fn get(&self, key: &str) -> Option<&Value> {
-        let parts: Vec<&str> = key.split('.').collect();
-        let base_key = parts[0];
-        let base_value = self.data.get(base_key)?;
-
-        if parts.len() == 1 {
-            Some(base_value)
-        } else {
-            base_value.get(&parts[1..].join("."))
-        }
+        self.data.get(key)
     }
 
-    /// Deletes a value for the given key
+    /// Deletes a value from the store
     pub fn delete(&mut self, key: &str) -> Option<Value> {
         self.data.remove(key)
     }
@@ -78,4 +71,4 @@ impl Store {
     pub fn iter(&self) -> impl Iterator<Item = (&String, &Value)> {
         self.data.iter()
     }
-} 
+}

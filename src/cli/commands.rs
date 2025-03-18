@@ -1,7 +1,7 @@
-use std::path::Path;
 use crate::error::StoreError;
 use crate::store::Store;
 use crate::value::Value;
+use std::path::Path;
 
 /// Parses a value from a string input
 pub fn parse_value(s: &str) -> Result<Value, StoreError> {
@@ -28,8 +28,7 @@ pub fn parse_value(s: &str) -> Result<Value, StoreError> {
     }
 
     // If quoted, treat as JSON string to handle escapes properly
-    if (s.starts_with('"') && s.ends_with('"')) || 
-       (s.starts_with('\'') && s.ends_with('\'')) {
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
         return serde_json::from_str(s)
             .map_err(|e| StoreError::Serialization(format!("Invalid string: {}", e)));
     }
@@ -106,4 +105,4 @@ pub fn handle_list(store: &Store) {
             println!("  {} => {}", key, value);
         }
     }
-} 
+}
