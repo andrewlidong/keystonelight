@@ -19,6 +19,15 @@ use std::path::Path;
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
 use serde_json;
+use keystonelight::{Store, StoreError};
+use keystonelight::cli::{
+    parse_input,
+    print_usage,
+    handle_set,
+    handle_get,
+    handle_delete,
+    handle_list,
+};
 
 #[derive(Error, Debug)]
 pub enum StoreError {
@@ -189,22 +198,6 @@ fn parse_value(s: &str) -> Result<Value, StoreError> {
 
     // Otherwise, treat as plain string
     Ok(Value::String(s.to_string()))
-}
-
-fn print_usage() {
-    println!("Welcome to KeystoneLight - A lightweight key-value store!");
-    println!("\nAvailable commands:");
-    println!("  SET <key> <value>  - Store a key-value pair");
-    println!("  GET <key>         - Retrieve a value by key (supports nested access with dots)");
-    println!("  DELETE <key>      - Remove a key-value pair");
-    println!("  LIST              - Show all key-value pairs");
-    println!("  HELP              - Show this help message");
-    println!("  EXIT              - Exit the program");
-    println!("\nExamples:");
-    println!("  SET name \"John Doe\"");
-    println!("  SET age 25");
-    println!("  SET user {{\"name\": \"John\", \"age\": 30}}");
-    println!("  GET user.name");
 }
 
 #[cfg(test)]
@@ -385,52 +378,6 @@ mod tests {
     }
 }
 
-fn parse_input(input: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut current_token = String::new();
-    let mut in_quotes = false;
-    let mut in_braces = 0;
-    let mut escape_next = false;
-
-    for c in input.chars() {
-        match c {
-            '"' if !escape_next => {
-                in_quotes = !in_quotes;
-                current_token.push(c);
-            }
-            '{' if !in_quotes => {
-                in_braces += 1;
-                current_token.push(c);
-            }
-            '}' if !in_quotes => {
-                in_braces -= 1;
-                current_token.push(c);
-            }
-            '\\' if !escape_next => {
-                escape_next = true;
-            }
-            ' ' if !in_quotes && in_braces == 0 && !escape_next => {
-                if !current_token.is_empty() {
-                    tokens.push(current_token);
-                    current_token = String::new();
-                }
-            }
-            _ => {
-                if escape_next {
-                    escape_next = false;
-                }
-                current_token.push(c);
-            }
-        }
-    }
-
-    if !current_token.is_empty() {
-        tokens.push(current_token);
-    }
-
-    tokens
-}
-
 fn main() -> Result<(), StoreError> {
     let store_path = Path::new("store.db");
     let mut store = if store_path.exists() {
@@ -468,14 +415,7 @@ fn main() -> Result<(), StoreError> {
                     println!("  SET user {{\"name\": \"John\", \"age\": 30}}");
                     continue;
                 }
-                match parse_value(&parts[2]) {
-                    Ok(value) => {
-                        store.set(parts[1].clone(), value);
-                        println!("Value set successfully!");
-                        store.save(store_path)?;
-                    }
-                    Err(e) => println!("Error parsing value: {}", e),
-                }
+                handle_set(&mut store, &parts[1], &parts[2], store_path)?;
             }
             "GET" => {
                 if parts.len() != 2 {
@@ -485,34 +425,16 @@ fn main() -> Result<(), StoreError> {
                     println!("  GET user.name");
                     continue;
                 }
-                match store.get(&parts[1]) {
-                    Some(value) => println!("Value: {}", value),
-                    None => println!("Key not found!"),
-                }
+                handle_get(&store, &parts[1]);
             }
             "DELETE" => {
                 if parts.len() != 2 {
                     println!("Usage: DELETE <key>");
                     continue;
                 }
-                match store.delete(&parts[1]) {
-                    Some(_) => {
-                        println!("Key deleted successfully!");
-                        store.save(store_path)?;
-                    }
-                    None => println!("Key not found!"),
-                }
+                handle_delete(&mut store, &parts[1], store_path)?;
             }
-            "LIST" => {
-                if store.data.is_empty() {
-                    println!("Store is empty!");
-                } else {
-                    println!("Current key-value pairs:");
-                    for (key, value) in &store.data {
-                        println!("  {} => {}", key, value);
-                    }
-                }
-            }
+            "LIST" => handle_list(&store),
             "HELP" => print_usage(),
             "EXIT" => {
                 println!("Goodbye!");
