@@ -240,7 +240,7 @@ fn main() -> Result<(), StoreError> {
         input.clear();
         reader.read_line(&mut input)?;
 
-        let parts = parse_input(&input.trim());
+        let parts = parse_input(input.trim());
         if parts.is_empty() {
             continue;
         }
