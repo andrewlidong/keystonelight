@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Create a report to help us improve KeystoneLight
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -13,18 +13,19 @@ A clear and concise description of what the bug is.
 **To Reproduce**
 Steps to reproduce the behavior:
 1. Run command '...'
-2. Enter input '....'
-3. See error
+2. Set value '...'
+3. Get value '...'
+4. See error
 
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
 **Error Output**
-If applicable, add the error message or unexpected output.
+If applicable, paste the error output here
 
-**Environment (please complete the following information):**
- - OS: [e.g. Ubuntu 20.04]
- - Rust Version: [e.g. 1.75.0]
+**Environment:**
+ - OS: [e.g. Ubuntu 20.04, macOS 12.0]
+ - Rust Version: [e.g. 1.70.0]
  - KeystoneLight Version: [e.g. 0.1.0]
 
 **Additional context**

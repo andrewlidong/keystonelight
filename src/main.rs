@@ -1,6 +1,6 @@
 use std::io::{self, Write, BufRead};
 use std::path::Path;
-use keystonelight::{Store, StoreError, Value};
+use keystonelight::Store;
 use keystonelight::cli::{
     parse_input,
     print_usage,
