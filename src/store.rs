@@ -12,6 +12,12 @@ pub struct Store {
     data: HashMap<String, Value>,
 }
 
+impl Default for Store {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Store {
     /// Creates a new empty store
     pub fn new() -> Self {

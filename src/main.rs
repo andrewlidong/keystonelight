@@ -1,13 +1,14 @@
 use keystonelight::cli::{
     handle_delete, handle_get, handle_list, handle_set, parse_input, print_usage,
 };
-use keystonelight::Store;
+use keystonelight::{Store, StoreError};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use keystonelight::Value;
     use tempfile::tempdir;
 
     #[test]
