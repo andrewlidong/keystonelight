@@ -1,7 +1,10 @@
 [package]
 name = "database"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 fs2 = "0.4" # For cross-platform file locking
+shared_memory = "0.12"
+nix = { version = "0.27", features = ["process"] }
+ctrlc = "3.4"
