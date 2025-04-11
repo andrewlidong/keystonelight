@@ -1,10 +1,27 @@
 [package]
-name = "database"
+name = "keystonelight"
 version = "0.1.0"
 edition = "2021"
+authors = ["Andrew Dong"]
+description = "A concurrent key-value database with in-memory storage and file persistence"
+license = "MIT"
+repository = "https://github.com/yourusername/keystonelight"
+readme = "README.md"
+keywords = ["database", "key-value", "concurrent", "persistence"]
+categories = ["database", "concurrency"]
 
 [dependencies]
-ctrlc = "3.4.6"
-lazy_static = "1.4.0"
-fs2 = "0.4.3"
-nix = { version = "0.27.1", features = ["process"] }
+fs2 = "0.4"
+signal-hook = "0.3"
+nix = "0.26"
+
+[dev-dependencies]
+tempfile = "3.8"  # For testing with temporary files
+
+[[bin]]
+name = "database"
+path = "src/main.rs"
+
+[[bin]]
+name = "client"
+path = "src/bin/client.rs"

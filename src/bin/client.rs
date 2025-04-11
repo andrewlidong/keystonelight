@@ -1,10 +1,43 @@
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::net::TcpStream;
 use std::process;
+use std::fs;
+use nix::sys::signal::Signal;
+use nix::unistd::Pid;
 
 const SERVER_ADDR: &str = "127.0.0.1:7878";
+const PID_FILE: &str = "keystonelight.pid";
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    
+    // Handle compact command separately
+    if args.len() > 1 && args[1] == "compact" {
+        if let Ok(pid_str) = fs::read_to_string(PID_FILE) {
+            if let Ok(pid) = pid_str.parse::<i32>() {
+                if let Err(e) = nix::sys::signal::kill(Pid::from_raw(pid), Signal::SIGUSR1) {
+                    eprintln!("Failed to send compaction signal: {}", e);
+                    process::exit(1);
+                }
+                println!("Compaction signal sent to server (PID: {})", pid);
+                process::exit(0);
+            }
+        }
+        eprintln!("Failed to read server PID from {}", PID_FILE);
+        process::exit(1);
+    }
+
+    // Handle direct commands
+    if args.len() > 1 {
+        let command = args[1..].join(" ");
+        if let Err(e) = send_command(&command) {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        }
+        process::exit(0);
+    }
+
+    // Interactive mode
     let stream = match TcpStream::connect(SERVER_ADDR) {
         Ok(stream) => stream,
         Err(e) => {
@@ -53,35 +86,32 @@ fn main() {
             _ => {}
         }
 
-        if let Err(e) = writer.write_all(format!("{}\n", line).as_bytes()) {
-            eprintln!("Failed to send command: {}", e);
+        if let Err(e) = send_command(line) {
+            eprintln!("Error: {}", e);
             break;
-        }
-        if let Err(e) = writer.flush() {
-            eprintln!("Failed to flush command: {}", e);
-            break;
-        }
-
-        let mut response = String::new();
-        match reader.read_line(&mut response) {
-            Ok(0) => {
-                println!("Server closed connection");
-                break;
-            }
-            Ok(_) => {
-                let response = response.trim();
-                if response.starts_with("ERROR") {
-                    eprintln!("{}", response);
-                } else {
-                    println!("{}", response);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to read response: {}", e);
-                break;
-            }
         }
     }
 
     println!("Goodbye!");
+}
+
+fn send_command(command: &str) -> std::io::Result<()> {
+    let mut stream = TcpStream::connect(SERVER_ADDR)?;
+    let mut reader = BufReader::new(&stream);
+    let mut writer = BufWriter::new(&stream);
+    
+    writeln!(writer, "{}", command)?;
+    writer.flush()?;
+    
+    let mut response = String::new();
+    reader.read_line(&mut response)?;
+    
+    let response = response.trim();
+    if response.starts_with("ERROR") {
+        eprintln!("{}", response);
+    } else {
+        println!("{}", response);
+    }
+    
+    Ok(())
 } 
