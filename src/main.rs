@@ -41,6 +41,12 @@ use fs2::FileExt;
 use signal_hook::consts::signal::SIGUSR1 as SIGUSR1_HOOK;
 use signal_hook::flag;
 
+// Import lazy static initialization
+use lazy_static::lazy_static;
+
+// Import Ctrl-C handling
+use ctrlc;
+
 // Define the path to the main database file where all key-value pairs are stored
 const DB_PATH: &str = "db.txt";
 
@@ -181,7 +187,7 @@ impl Database {
 }
 
 // Global mutex for database-wide operations
-lazy_static::lazy_static! {
+lazy_static! {
     static ref DB_MUTEX: Mutex<()> = Mutex::new(());
 }
 
