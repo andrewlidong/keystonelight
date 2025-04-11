@@ -1,192 +1,390 @@
-//! A simple key-value database with process-based concurrency support
-//! 
-//! This implementation provides a persistent key-value store with the following features:
-//! - File-based storage with proper locking mechanisms
-//! - Process-based concurrency support for parallel operations
-//! - Cache layer for improved read performance
-//! - Graceful shutdown handling
-//! - Support for multiple worker processes
+// Import command-line argument handling
+use std::env;
+// Import file system operations
+use std::fs::{File, OpenOptions};
+// Import I/O operations for reading, writing, and seeking
+use std::io::{BufRead, BufReader, Write, Seek, SeekFrom, Read};
+// Import Unix-specific file operations for setting permissions
+use std::os::unix::fs::OpenOptionsExt;
+// Import path manipulation utilities
+use std::path::Path;
+// Import process management for spawning commands
+use std::process::{Command, ExitStatus};
+// Import thread and timing utilities
+use std::{thread, time};
+// Import atomic operations for thread-safe flags
+use std::sync::atomic::{AtomicBool, Ordering};
+// Import thread synchronization primitives
+use std::sync::{Arc, Mutex, RwLock};
+// Import thread-safe collections
+use std::collections::HashMap;
+// Import TCP networking types
+use std::net::{TcpListener, TcpStream};
+// Import I/O error types and buffered I/O
+use std::io::{BufWriter, Error, ErrorKind};
+// Import message passing types for thread communication
+use std::sync::mpsc::{channel, Sender, Receiver};
 
-// Import standard library modules for file operations, I/O, and process management
-use std::env;  // For accessing command line arguments
-use std::fs::{File, OpenOptions};  // For file operations
-use std::io::{BufRead, BufReader, Write, Seek, SeekFrom, Read};  // For reading/writing files
-use std::os::unix::fs::OpenOptionsExt;  // For setting file permissions on Unix systems
-use std::path::Path;  // For handling file paths
-use std::process::{Command, ExitStatus};  // For spawning child processes
-use std::{thread, time};  // For thread operations and time-related functions
-use std::sync::atomic::{AtomicBool, Ordering};  // For atomic operations
-use std::sync::Arc;  // For thread-safe reference counting
-use nix::unistd;  // For Unix system calls like fork()
+use nix::unistd;
 
-// Import external crate for file locking
-use fs2::FileExt;  // Provides file locking functionality
+use fs2::FileExt;
 
-// Constants for file paths and configuration
-const DB_PATH: &str = "db.txt";      // Main database file path
-const CACHE_PATH: &str = "cache.txt"; // Cache file path for faster reads
-const NUM_WORKERS: usize = 4;         // Number of worker processes to spawn
+// Path to the main database file
+const DB_PATH: &str = "db.txt";
+// Path to the cache file for faster access
+const CACHE_PATH: &str = "cache.txt";
+// Number of worker threads to spawn
+const NUM_WORKERS: usize = 4;
+// Server address and port for TCP connections
+const SERVER_ADDR: &str = "127.0.0.1:7878";
 
-// Main function - entry point of the program
+// Thread-safe database structure
+struct Database {
+    // Main storage using a read-write lock for concurrent access
+    data: RwLock<HashMap<String, String>>,
+    // Cache storage using a read-write lock for concurrent access
+    cache: RwLock<HashMap<String, String>>,
+}
+
+// Implementation of database operations
+impl Database {
+    // Create a new empty database instance
+    fn new() -> Self {
+        Self {
+            // Initialize empty hashmaps with read-write locks
+            data: RwLock::new(HashMap::new()),
+            cache: RwLock::new(HashMap::new()),
+        }
+    }
+
+    // Load data from the persistent file into memory
+    fn load_from_file(&self) -> std::io::Result<()> {
+        // Try to open the database file
+        if let Ok(file) = File::open(DB_PATH) {
+            // Create a buffered reader for efficient reading
+            let reader = BufReader::new(file);
+            // Get write access to the data hashmap
+            let mut data = self.data.write().unwrap();
+            // Read each line and parse key-value pairs
+            for line in reader.lines().flatten() {
+                if let Some((k, v)) = line.split_once('|') {
+                    // Insert the key-value pair into the hashmap
+                    data.insert(k.to_string(), v.to_string());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // Save in-memory data to the persistent file
+    fn save_to_file(&self) -> std::io::Result<()> {
+        // Create or open the file with write permissions
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(DB_PATH)?;
+        
+        // Get read access to the data hashmap
+        let data = self.data.read().unwrap();
+        // Write each key-value pair to the file
+        for (k, v) in data.iter() {
+            writeln!(file, "{}|{}", k, v)?;
+        }
+        Ok(())
+    }
+
+    // Retrieve a value by key, checking cache first
+    fn get(&self, key: &str) -> Option<String> {
+        // Try to get the value from cache first
+        let cache = self.cache.read().unwrap();
+        if let Some(value) = cache.get(key) {
+            return Some(value.clone());
+        }
+        
+        // If not in cache, check the main data store
+        let data = self.data.read().unwrap();
+        data.get(key).cloned()
+    }
+
+    // Set a key-value pair in both main data and cache
+    fn set(&self, key: &str, value: &str) {
+        // Get write access to both data and cache
+        let mut data = self.data.write().unwrap();
+        let mut cache = self.cache.write().unwrap();
+        // Update both storages
+        data.insert(key.to_string(), value.to_string());
+        cache.insert(key.to_string(), value.to_string());
+    }
+
+    // Delete a key from both main data and cache
+    fn delete(&self, key: &str) -> bool {
+        // Get write access to both data and cache
+        let mut data = self.data.write().unwrap();
+        let mut cache = self.cache.write().unwrap();
+        // Remove from both storages and return true if either contained the key
+        data.remove(key).is_some() || cache.remove(key).is_some()
+    }
+}
+
+lazy_static::lazy_static! {
+    static ref DB_MUTEX: Mutex<()> = Mutex::new(());
+}
+
+// Main entry point of the program
 fn main() {
-    // Get command line arguments as a vector of strings
+    // Collect command line arguments into a vector
     let args: Vec<String> = env::args().collect();
     
-    // Check if we have at least a command argument
+    // Check if at least one command is provided
     if args.len() < 2 {
-        // Print usage instructions if no command is provided
-        eprintln!("Usage: {} [get|set|delete|serve] [key] [value?]", args[0]);
+        eprintln!("Usage: {} [serve|get|set|delete] [key] [value?]", args[0]);
         return;
     }
 
-    // Match the command argument to determine what operation to perform
+    // Create a new thread-safe database instance
+    let db = Arc::new(Database::new());
+    // Load existing data from file
+    if let Err(e) = db.load_from_file() {
+        eprintln!("Error loading database: {}", e);
+        return;
+    }
+
+    // Match on the command provided
     match args[1].as_str() {
+        // Start the database server
         "serve" => {
-            // Start the database server
-            serve();
+            serve(db);
         }
+        // Set a key-value pair
         "set" => {
-            // Check if we have both key and value arguments
+            // Check for correct number of arguments
             if args.len() != 4 {
                 eprintln!("Usage: {} set <key> <value>", args[0]);
                 return;
             }
-            // Extract key and value from arguments
+            // Extract key and value
             let key = &args[2];
             let value = &args[3];
-            // Set the key-value pair and handle any errors
-            if let Err(e) = set_with_cache(key, value) {
-                eprintln!("Error setting value: {}", e);
+            // Set the value and save to file
+            db.set(key, value);
+            if let Err(e) = db.save_to_file() {
+                eprintln!("Error saving to file: {}", e);
             }
         }
+        // Get a value by key
         "get" => {
-            // Check if we have a key argument
+            // Check for correct number of arguments
             if args.len() != 3 {
                 eprintln!("Usage: {} get <key>", args[0]);
                 return;
             }
-            // Extract key from arguments
+            // Extract key and retrieve value
             let key = &args[2];
-            // Get the value and print it or "Key not found"
-            match get_with_cache(key) {
+            match db.get(key) {
                 Some(value) => println!("{}", value),
                 None => println!("Key not found"),
             }
         }
+        // Delete one or more keys
         "delete" => {
-            // Check if we have at least one key to delete
+            // Check for at least one key to delete
             if args.len() < 3 {
                 eprintln!("Usage: {} delete <key1> [key2...]", args[0]);
                 return;
             }
-            // Get all keys to delete
+            // Extract keys and delete each one
             let keys = &args[2..];
-            // Delete the keys and handle any errors
-            if let Err(e) = delete_keys(keys) {
-                eprintln!("Error deleting keys: {}", e);
+            for key in keys {
+                if db.delete(key) {
+                    println!("Deleted key '{}'", key);
+                } else {
+                    println!("Key '{}' not found", key);
+                }
+            }
+            // Save changes to file
+            if let Err(e) = db.save_to_file() {
+                eprintln!("Error saving to file: {}", e);
             }
         }
-        "delete-key" => {
-            // Internal command for deleting a single key
-            if args.len() != 3 {
-                eprintln!("Internal error: delete-key requires exactly one key");
-                std::process::exit(1);
-            }
-            let key = &args[2];
-            if let Err(e) = delete_key(key) {
-                eprintln!("Error deleting key: {}", e);
-                std::process::exit(1);
-            }
-        }
+        // Handle unknown commands
         _ => {
-            // Handle unknown commands
             eprintln!("Unknown command: {}", args[1]);
         }
     }
 }
 
-/// Starts the database server with multiple worker processes
-/// 
-/// This function:
-/// 1. Creates NUM_WORKERS child processes
-/// 2. Sets up a signal handler for graceful shutdown
-/// 3. Waits for shutdown signal while keeping the parent process alive
-fn serve() {
-    // Create worker processes
-    for _ in 0..NUM_WORKERS {
-        // Use unsafe block because fork() is an unsafe operation
-        match unsafe { unistd::fork() } {
-            // Parent process receives the child's PID
-            Ok(unistd::ForkResult::Parent { child }) => {
-                println!("Created worker process {}", child);
-            }
-            // Child process starts its worker loop
-            Ok(unistd::ForkResult::Child) => {
-                worker_loop();
-                std::process::exit(0);
-            }
-            // Handle fork failure
-            Err(e) => {
-                eprintln!("Failed to fork: {}", e);
-                return;
-            }
-        }
-    }
+// Start the database server with worker threads
+fn serve(db: Arc<Database>) {
+    // Bind to the configured address
+    let listener = TcpListener::bind(SERVER_ADDR).expect("Failed to bind to address");
+    println!("Server listening on {}", SERVER_ADDR);
 
-    // Create an atomic boolean to control the main loop
+    // Set up graceful shutdown handling
     let running = Arc::new(AtomicBool::new(true));
-    // Clone the reference for the signal handler
     let r = running.clone();
-    // Set up Ctrl-C handler
     ctrlc::set_handler(move || {
+        // Set running flag to false on Ctrl-C
         r.store(false, Ordering::SeqCst);
     }).expect("Error setting Ctrl-C handler");
 
-    // Main loop that keeps the parent process alive
+    // Create a vector to store worker thread handles
+    let mut handles = Vec::new();
+    // Spawn worker threads
+    for _ in 0..NUM_WORKERS {
+        // Clone resources for the worker thread
+        let listener = listener.try_clone().expect("Failed to clone listener");
+        let db = db.clone();
+        let running = running.clone();
+        
+        // Spawn a worker thread
+        let handle = thread::spawn(move || {
+            // Accept connections while running
+            while running.load(Ordering::SeqCst) {
+                if let Ok((stream, addr)) = listener.accept() {
+                    println!("New connection from {}", addr);
+                    // Clone database reference for the connection handler
+                    let db = db.clone();
+                    // Spawn a thread to handle this connection
+                    thread::spawn(move || {
+                        handle_client(stream, db);
+                    });
+                }
+            }
+        });
+        handles.push(handle);
+    }
+
+    // Keep the main thread alive while running
     while running.load(Ordering::SeqCst) {
         thread::sleep(time::Duration::from_secs(1));
     }
-}
 
-/// Main loop for worker processes
-/// 
-/// Each worker process:
-/// 1. Sets up its own signal handler
-/// 2. Processes requests in a loop
-/// 3. Exits gracefully on shutdown signal
-fn worker_loop() {
-    // Create an atomic boolean to control the worker loop
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-    // Set up Ctrl-C handler for the worker
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
-
-    // Worker's main loop
-    while running.load(Ordering::SeqCst) {
-        // Process requests from clients
-        thread::sleep(time::Duration::from_millis(100));
+    // Wait for all worker threads to finish
+    for handle in handles {
+        handle.join().unwrap();
     }
 }
 
-/// Retrieves a value from the cache or database
-/// 
-/// This function implements a two-level lookup:
-/// 1. First tries to find the key in the cache file
-/// 2. If not found in cache, falls back to the main database
-/// 
-/// Uses shared locks for concurrent read access
+// Handle an individual client connection
+fn handle_client(stream: TcpStream, db: Arc<Database>) {
+    // Create buffered reader and writer for the stream
+    let mut reader = BufReader::new(&stream);
+    let mut writer = BufWriter::new(&stream);
+    let mut line = String::new();
+
+    // Read commands line by line
+    while let Ok(n) = reader.read_line(&mut line) {
+        // Break if connection is closed
+        if n == 0 {
+            break;
+        }
+
+        // Parse and execute the command
+        let response = match parse_command(&line) {
+            Ok((cmd, key, value)) => {
+                match cmd.as_str() {
+                    // Handle get command
+                    "get" => {
+                        match db.get(&key) {
+                            Some(val) => format!("OK {}\n", val),
+                            None => "ERROR Key not found\n".to_string(),
+                        }
+                    }
+                    // Handle set command
+                    "set" => {
+                        match value {
+                            Some(val) => {
+                                db.set(&key, &val);
+                                if let Err(e) = db.save_to_file() {
+                                    format!("ERROR {}\n", e)
+                                } else {
+                                    "OK\n".to_string()
+                                }
+                            }
+                            None => "ERROR Missing value for set command\n".to_string(),
+                        }
+                    }
+                    // Handle delete command
+                    "delete" => {
+                        if db.delete(&key) {
+                            if let Err(e) = db.save_to_file() {
+                                format!("ERROR {}\n", e)
+                            } else {
+                                "OK\n".to_string()
+                            }
+                        } else {
+                            "ERROR Key not found\n".to_string()
+                        }
+                    }
+                    // Handle unknown commands
+                    _ => "ERROR Unknown command\n".to_string(),
+                }
+            }
+            Err(e) => format!("ERROR {}\n", e),
+        };
+
+        // Send response to client
+        if let Err(e) = writer.write_all(response.as_bytes()) {
+            eprintln!("Error writing to client: {}", e);
+            break;
+        }
+        if let Err(e) = writer.flush() {
+            eprintln!("Error flushing writer: {}", e);
+            break;
+        }
+
+        // Clear the line buffer for next command
+        line.clear();
+    }
+}
+
+// Parse a command string into its components
+fn parse_command(line: &str) -> Result<(String, String, Option<String>), Error> {
+    // Split command into whitespace-separated parts
+    let parts: Vec<&str> = line.trim().split_whitespace().collect();
+    // Check for empty command
+    if parts.is_empty() {
+        return Err(Error::new(ErrorKind::InvalidInput, "Empty command"));
+    }
+
+    // Convert command to lowercase for case-insensitive matching
+    let cmd = parts[0].to_lowercase();
+    match cmd.as_str() {
+        // Handle get command format
+        "get" => {
+            if parts.len() != 2 {
+                return Err(Error::new(ErrorKind::InvalidInput, "Usage: get <key>"));
+            }
+            Ok((cmd, parts[1].to_string(), None))
+        }
+        // Handle set command format
+        "set" => {
+            if parts.len() < 3 {
+                return Err(Error::new(ErrorKind::InvalidInput, "Usage: set <key> <value>"));
+            }
+            // Join remaining parts as value to support spaces
+            let value = parts[2..].join(" ");
+            Ok((cmd, parts[1].to_string(), Some(value)))
+        }
+        // Handle delete command format
+        "delete" => {
+            if parts.len() != 2 {
+                return Err(Error::new(ErrorKind::InvalidInput, "Usage: delete <key>"));
+            }
+            Ok((cmd, parts[1].to_string(), None))
+        }
+        // Handle unknown commands
+        _ => Err(Error::new(ErrorKind::InvalidInput, "Unknown command")),
+    }
+}
+
 fn get_with_cache(key: &str) -> Option<String> {
-    // Try to open and read from cache file first
     if let Ok(file) = File::open(CACHE_PATH) {
-        // Try to acquire a shared lock on the cache file
         if let Ok(_lock) = file.try_lock_shared() {
-            // Create a buffered reader for efficient reading
             let reader = BufReader::new(&file);
-            // Search for the key in each line
             for line in reader.lines().flatten() {
-                // Split each line into key and value
                 if let Some((k, v)) = line.split_once('|') {
                     if k == key {
                         return Some(v.to_string());
@@ -196,29 +394,34 @@ fn get_with_cache(key: &str) -> Option<String> {
         }
     }
 
-    // If not found in cache, try the main database
     get(key)
 }
 
-/// Sets a key-value pair in the database
-/// 
-/// This function:
-/// 1. Acquires an exclusive lock on the database file
-/// 2. Updates or adds the key-value pair
-/// 3. Releases the lock
-/// 
-/// Uses exclusive locks to prevent concurrent writes
+fn open_or_create_db() -> std::io::Result<File> {
+    if !Path::new(DB_PATH).exists() {
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .read(true)
+            .mode(0o600)
+            .open(DB_PATH)?;
+        Ok(file)
+    } else {
+        OpenOptions::new()
+            .write(true)
+            .read(true)
+            .append(true)
+            .open(DB_PATH)
+    }
+}
+
 fn set(key: &str, value: &str) -> std::io::Result<()> {
-    // Open or create the database file
     let mut file = open_or_create_db()?;
-    // Acquire an exclusive lock on the file
     FileExt::lock_exclusive(&file)?;
     
-    // Read the current content of the file
     let mut content = String::new();
     BufReader::new(&file).read_to_string(&mut content)?;
     
-    // Remove existing key if present and build new content
     let mut new_content = String::new();
     let mut found = false;
     for line in content.lines() {
@@ -232,18 +435,14 @@ fn set(key: &str, value: &str) -> std::io::Result<()> {
         }
     }
     
-    // Add the new key-value pair
     new_content.push_str(&format!("{}|{}\n", key, value));
     
-    // Write the new content back to the file
-    file.set_len(0)?;  // Clear the file
-    file.seek(SeekFrom::Start(0))?;  // Move to the beginning
-    write!(file, "{}", new_content)?;  // Write the new content
+    file.set_len(0)?;
+    file.seek(SeekFrom::Start(0))?;
+    write!(file, "{}", new_content)?;
     
-    // Release the lock
     FileExt::unlock(&file)?;
     
-    // Print appropriate message
     if found {
         println!("Updated key '{}'", key);
     } else {
@@ -252,96 +451,13 @@ fn set(key: &str, value: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Sets a key-value pair in both database and cache
-/// 
-/// This function:
-/// 1. Updates the main database
-/// 2. Updates the cache file
-/// 3. Maintains consistency between both files
-fn set_with_cache(key: &str, value: &str) -> std::io::Result<()> {
-    // Update main database first
-    set(key, value)?;
-    
-    // Update cache file
-    let mut cache_file = OpenOptions::new()
-        .create(true)  // Create if doesn't exist
-        .write(true)   // Allow writing
-        .read(true)    // Allow reading
-        .mode(0o600)   // Set file permissions (read/write for owner only)
-        .open(CACHE_PATH)?;
-    
-    // Acquire exclusive lock on cache file
-    let _lock = cache_file.try_lock_exclusive()?;
-    
-    // Read current cache content
-    let mut content = String::new();
-    BufReader::new(&cache_file).read_to_string(&mut content)?;
-    
-    // Remove existing key if present and build new content
-    let mut new_content = String::new();
-    for line in content.lines() {
-        if let Some((k, _)) = line.split_once('|') {
-            if k != key {
-                new_content.push_str(line);
-                new_content.push('\n');
-            }
-        }
-    }
-    
-    // Add new key-value pair
-    new_content.push_str(&format!("{}|{}\n", key, value));
-    
-    // Write back to cache file
-    cache_file.set_len(0)?;  // Clear the file
-    cache_file.seek(SeekFrom::Start(0))?;  // Move to the beginning
-    write!(cache_file, "{}", new_content)?;  // Write the new content
-    
-    Ok(())
-}
-
-/// Opens or creates the database file with appropriate permissions
-/// 
-/// This function:
-/// 1. Creates the file if it doesn't exist
-/// 2. Sets appropriate read/write permissions
-/// 3. Returns a file handle for database operations
-fn open_or_create_db() -> std::io::Result<File> {
-    if !Path::new(DB_PATH).exists() {
-        // Create new file with appropriate permissions
-        let file = OpenOptions::new()
-            .create(true)  // Create if doesn't exist
-            .write(true)   // Allow writing
-            .read(true)    // Allow reading
-            .mode(0o600)   // Set file permissions (read/write for owner only)
-            .open(DB_PATH)?;
-        Ok(file)
-    } else {
-        // Open existing file
-        OpenOptions::new()
-            .write(true)   // Allow writing
-            .read(true)    // Allow reading
-            .append(true)  // Allow appending
-            .open(DB_PATH)
-    }
-}
-
-/// Retrieves a value from the database
-/// 
-/// This function:
-/// 1. Opens the database file
-/// 2. Acquires a shared lock for reading
-/// 3. Searches for the key
-/// 4. Returns the value if found
+/// Gets a value by key from the database
 fn get(key: &str) -> Option<String> {
-    // Open the database file
     let file = open_or_create_db().ok()?;
-    // Acquire shared lock for reading
     FileExt::lock_shared(&file).ok()?;
 
-    // Create a buffered reader for efficient reading
     let reader = BufReader::new(&file);
 
-    // Search for the key
     let mut result = None;
     for line in reader.lines().flatten() {
         if let Some((k, v)) = line.split_once('|') {
@@ -351,32 +467,23 @@ fn get(key: &str) -> Option<String> {
         }
     }
 
-    // Release the lock
     FileExt::unlock(&file).ok()?;
     result
 }
 
-/// Deletes multiple keys from the database
-/// 
-/// This function:
-/// 1. Spawns a separate process for each key deletion
-/// 2. Waits for all deletion processes to complete
-/// 3. Handles process creation and monitoring
+/// Deletes one or more keys from the database
 fn delete_keys(keys: &[String]) -> std::io::Result<()> {
-    // Vector to store child processes
     let mut children = Vec::new();
 
-    // Spawn a process for each key to delete
     for key in keys {
         let child = Command::new(env::current_exe()?)
-            .arg("delete-key")  // Internal command for deleting a single key
+            .arg("delete-key")
             .arg(key)
             .spawn()?;
         
         children.push(child);
     }
 
-    // Wait for all child processes to complete
     for mut child in children {
         match child.wait() {
             Ok(status) => {
@@ -395,24 +502,14 @@ fn delete_keys(keys: &[String]) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Deletes a single key from both database and cache
-/// 
-/// This function:
-/// 1. Acquires an exclusive lock on the database
-/// 2. Removes the key from the database
-/// 3. Updates the cache file to maintain consistency
-/// 4. Handles file locking and error cases
+/// Deletes a single key from the database
 fn delete_key(key: &str) -> std::io::Result<()> {
-    // Delete from main database
     let mut file = open_or_create_db()?;
-    // Acquire exclusive lock
     FileExt::lock_exclusive(&file)?;
     
-    // Read current content
     let mut content = String::new();
     BufReader::new(&file).read_to_string(&mut content)?;
     
-    // Remove the key and build new content
     let mut found = false;
     let mut new_content = String::new();
     
@@ -428,22 +525,18 @@ fn delete_key(key: &str) -> std::io::Result<()> {
     }
     
     if found {
-        // Write back the updated content
-        file.set_len(0)?;  // Clear the file
-        file.seek(SeekFrom::Start(0))?;  // Move to the beginning
-        write!(file, "{}", new_content)?;  // Write the new content
+        file.set_len(0)?;
+        file.seek(SeekFrom::Start(0))?;
+        write!(file, "{}", new_content)?;
         
-        // Also update cache file
         if let Ok(mut cache_file) = OpenOptions::new()
-            .create(true)  // Create if doesn't exist
-            .write(true)   // Allow writing
-            .truncate(true)  // Clear existing content
-            .mode(0o600)   // Set file permissions
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .mode(0o600)
             .open(CACHE_PATH)
         {
-            // Acquire exclusive lock on cache file
             let _lock = cache_file.try_lock_exclusive()?;
-            // Write the same content to cache
             write!(cache_file, "{}", new_content)?;
         }
         
@@ -452,7 +545,40 @@ fn delete_key(key: &str) -> std::io::Result<()> {
         println!("Key '{}' not found", key);
     }
 
-    // Release the lock
     FileExt::unlock(&file)?;
+    Ok(())
+}
+
+fn set_with_cache(key: &str, value: &str) -> std::io::Result<()> {
+    set(key, value)?;
+    
+    let mut cache_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .read(true)
+        .mode(0o600)
+        .open(CACHE_PATH)?;
+    
+    let _lock = cache_file.try_lock_exclusive()?;
+    
+    let mut content = String::new();
+    BufReader::new(&cache_file).read_to_string(&mut content)?;
+    
+    let mut new_content = String::new();
+    for line in content.lines() {
+        if let Some((k, _)) = line.split_once('|') {
+            if k != key {
+                new_content.push_str(line);
+                new_content.push('\n');
+            }
+        }
+    }
+    
+    new_content.push_str(&format!("{}|{}\n", key, value));
+    
+    cache_file.set_len(0)?;
+    cache_file.seek(SeekFrom::Start(0))?;
+    write!(cache_file, "{}", new_content)?;
+    
     Ok(())
 }
