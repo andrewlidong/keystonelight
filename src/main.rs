@@ -35,14 +35,6 @@ use lazy_static::lazy_static;
 // Import Ctrl-C handling
 use ctrlc;
 
-// Import process and fork-related modules
-use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{fork, ForkResult, Pid};
-use std::process::exit;
-
-// Import file locking
-use fs2::FileExt;
-
 // Define constants for file paths and server configuration
 const DB_PATH: &str = "db.txt";
 const SERVER_ADDR: &str = "127.0.0.1:7878";
@@ -164,77 +156,24 @@ impl Database {
         Ok(())
     }
 
-    // Delete multiple keys using child processes
-    fn delete_with_children(&self, keys: &[String]) -> io::Result<()> {
-        let mut child_pids = Vec::new();
+    // Delete a key from both main storage and cache
+    fn delete(&self, key: &str) -> bool {
+        let _lock = DB_MUTEX.lock().unwrap();
+        let mut data = self.data.write().unwrap();
+        let mut cache = self.cache.write().unwrap();
 
-        // Create a file lock to coordinate between processes
-        let lock_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open("db.lock")?;
-
-        // Fork a child process for each key
-        for key in keys {
-            match unsafe { fork() } {
-                Ok(ForkResult::Parent { child }) => {
-                    println!("Started child process {} for key '{}'", child, key);
-                    child_pids.push((child, key.clone()));
-                }
-                Ok(ForkResult::Child) => {
-                    // Child process: delete the key
-                    let result = (|| {
-                        // Acquire exclusive lock
-                        lock_file.lock_exclusive()?;
-
-                        let mut data = self.data.write().unwrap();
-                        let mut cache = self.cache.write().unwrap();
-
-                        let found = data.remove(key).is_some();
-                        if found {
-                            cache.remove(key);
-                            drop(data);
-                            drop(cache);
-                            self.save_to_file()?;
-                            self.save_cache().ok();
-                        }
-
-                        // Release lock
-                        lock_file.unlock()?;
-
-                        Ok::<bool, io::Error>(found)
-                    })();
-
-                    // Exit with appropriate status
-                    match result {
-                        Ok(true) => exit(0),  // Success
-                        Ok(false) => exit(1), // Key not found
-                        Err(_) => exit(2),    // Error
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Fork failed for key '{}': {}", key, e);
-                }
+        let found = data.remove(key).is_some();
+        if found {
+            cache.remove(key);
+            drop(data);
+            drop(cache);
+            if let Err(e) = self.save_to_file() {
+                eprintln!("Warning: Failed to save changes to file: {}", e);
             }
+            self.save_cache().ok(); // Ignore cache save errors
         }
 
-        // Parent: wait for all children to complete
-        for (pid, key) in child_pids {
-            match waitpid(pid, None) {
-                Ok(WaitStatus::Exited(_, status)) => match status {
-                    0 => println!("Successfully deleted key '{}' (pid: {})", key, pid),
-                    1 => println!("Key '{}' not found (pid: {})", key, pid),
-                    2 => println!("Error deleting key '{}' (pid: {})", key, pid),
-                    _ => println!("Unknown status for key '{}' (pid: {})", key, pid),
-                },
-                Ok(status) => println!("Child process for key '{}' terminated: {:?}", key, status),
-                Err(e) => eprintln!("Error waiting for child process: {}", e),
-            }
-        }
-
-        // Clean up lock file
-        std::fs::remove_file("db.lock").ok();
-        Ok(())
+        found
     }
 
     // Compact the database file by removing deleted entries and reorganizing data
@@ -348,13 +287,15 @@ fn main() {
             }
         }
         "delete" => {
-            if args.len() < 3 {
-                eprintln!("Usage: {} delete <key1> [key2 ...]", args[0]);
+            if args.len() != 3 {
+                eprintln!("Usage: {} delete <key>", args[0]);
                 return;
             }
-            let keys: Vec<String> = args[2..].iter().map(|s| s.to_string()).collect();
-            if let Err(e) = db.delete_with_children(&keys) {
-                eprintln!("Error during deletion: {}", e);
+            let key = &args[2];
+            if db.delete(key) {
+                println!("Key '{}' deleted successfully", key);
+            } else {
+                println!("Key '{}' not found", key);
             }
         }
         _ => {
@@ -456,10 +397,13 @@ fn handle_client(mut stream: TcpStream, db: Arc<Database>) -> io::Result<()> {
                     String::from("ERROR Missing value")
                 }
             }
-            "delete" => match db.delete_with_children(&[key.to_string()]) {
-                Ok(_) => String::from("OK"),
-                Err(e) => format!("ERROR {}", e),
-            },
+            "delete" => {
+                if db.delete(&key) {
+                    String::from("OK")
+                } else {
+                    String::from("ERROR Key not found")
+                }
+            }
             _ => String::from("ERROR Unknown command"),
         },
         Err(e) => format!("ERROR {}", e),
