@@ -13,6 +13,9 @@ use std::os::unix::fs::OpenOptionsExt;
 // Import thread utilities for concurrent operations
 use std::thread;
 
+// Import time utilities
+use std::time::Duration;
+
 // Import atomic operations for thread-safe flags
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -320,6 +323,7 @@ fn serve(db: Arc<Database>) {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
+        println!("\nShutting down server...");
         r.store(false, Ordering::SeqCst);
     })
     .expect("Error setting Ctrl-C handler");
@@ -350,25 +354,42 @@ fn serve(db: Arc<Database>) {
 
                 match stream {
                     Ok(stream) => {
-                        println!("New connection from: {}", stream.peer_addr().unwrap());
                         if let Err(e) = handle_client(stream, Arc::clone(&db)) {
                             eprintln!("Error handling client: {}", e);
                         }
                     }
-                    Err(e) => eprintln!("Error accepting connection: {}", e),
+                    Err(e) => {
+                        if running.load(Ordering::SeqCst) {
+                            eprintln!("Error accepting connection: {}", e);
+                        }
+                    }
                 }
             }
         });
         handles.push(handle);
     }
 
-    // Wait for all worker threads to complete
-    for handle in handles {
-        handle.join().unwrap();
+    // Wait for Ctrl+C
+    while running.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_millis(100));
     }
 
-    // Cleanup
-    std::fs::remove_file(PID_FILE).ok();
+    // Close the listener to stop accepting new connections
+    drop(listener);
+
+    // Wait for all worker threads to finish
+    for handle in handles {
+        handle.join().expect("Failed to join worker thread");
+    }
+
+    // Save final state
+    if let Err(e) = db.save_to_file() {
+        eprintln!("Error saving final state: {}", e);
+    }
+
+    // Clean up PID file
+    let _ = std::fs::remove_file(PID_FILE);
+    println!("Server shutdown complete");
 }
 
 // Handle client connections and process their commands
