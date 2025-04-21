@@ -47,9 +47,6 @@ cd keystonelight
 
 # Build the project
 cargo build --release
-
-# Run tests
-cargo test
 ```
 
 ### Development Tools
@@ -133,48 +130,6 @@ Alice
 OK
 > quit
 Goodbye!
-```
-
-## Testing
-
-### Running Tests
-```bash
-# Run all tests
-cargo test
-
-# Run specific test
-cargo test test_name
-
-# Run tests with output
-cargo test -- --nocapture
-```
-
-### Test Scenarios
-1. Basic Operations
-```bash
-# Set and get
-cargo run --bin client -- set test_key "test_value"
-cargo run --bin client -- get test_key
-```
-
-2. Concurrent Access
-```bash
-# Run in multiple terminals
-terminal1$ cargo run --bin client -- set key1 "value1"
-terminal2$ cargo run --bin client -- get key1
-terminal3$ cargo run --bin client -- set key1 "value2"
-```
-
-3. Compaction Test
-```bash
-# Add and delete multiple entries
-for i in {1..5}; do
-    cargo run --bin client -- set "key$i" "value$i"
-done
-for i in {1..3}; do
-    cargo run --bin client -- delete "key$i"
-done
-cargo run --bin client -- compact
 ```
 
 ## Implementation Details
