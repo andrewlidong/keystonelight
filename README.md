@@ -1,192 +1,319 @@
-# Threaded Key-Value Database
+# KeystoneLight Database
 
-A concurrent key-value database with in-memory storage and file persistence, supporting multiple client connections.
+A lightweight, concurrent key-value database written in Rust, featuring in-memory storage with file persistence and efficient compaction.
 
 ## Features
 
-- In-memory storage with file persistence
-- Thread-safe operations using RwLock
-- Multiple worker threads for handling client connections
+### Core Functionality
+- In-memory key-value storage with persistent file backup
+- Thread-safe concurrent operations using RwLock
+- Multi-threaded server with configurable worker threads
 - TCP-based client-server communication
-- Support for get, set, and delete operations
-- Database compaction to reclaim space from deleted entries
-- Process ID file for external management
-- Signal-based compaction trigger
+- Sorted storage for efficient retrieval
 
-## Building
+### Data Operations
+- `get`: Retrieve values with cache-first lookup
+- `set`: Store key-value pairs with immediate persistence
+- `delete`: Remove entries with atomic operations
+- `compact`: Optimize storage and remove deleted entries
+
+### Performance & Safety
+- Thread pool for handling concurrent client connections
+- Cache layer for faster read operations
+- Atomic file operations for data integrity
+- Proper lock management to prevent deadlocks
+- Signal-based database management
+
+### System Features
+- Process ID tracking for external management
+- Graceful shutdown handling
+- Error recovery and cleanup
+- File-system based persistence
+- Database compaction for space optimization
+
+## Development Setup
+
+### Prerequisites
+- Rust (latest stable version)
+- Cargo (comes with Rust)
+- Unix-like environment (Linux/macOS)
+
+### Installation
 
 ```bash
-cargo build
+# Clone the repository
+git clone https://github.com/andrewlidong/keystonelight.git
+cd keystonelight
+
+# Build the project
+cargo build --release
+
+# Run tests
+cargo test
 ```
 
-## Running the Server
+### Development Tools
+- `cargo fix`: Auto-fix common code issues
+- `cargo fmt`: Format code according to Rust style guidelines
+- `cargo clippy`: Additional linting checks
 
-Start the database server:
+## Usage
+
+### Starting the Server
 
 ```bash
 cargo run --bin database -- serve
+```
+
+Expected output:
+```
+Server listening on 127.0.0.1:7878
 ```
 
 The server will:
-1. Start listening on `127.0.0.1:7878` with 4 worker threads
-2. Write its process ID to `keystonelight.pid`
-3. Set up a signal handler for compaction requests
+- Start listening on `127.0.0.1:7878`
+- Create a worker thread pool (default: 4 threads)
+- Write its PID to `keystonelight.pid`
+- Initialize the database from existing data (if any)
 
-## Client Operations
+### Client Operations
 
-### Setting a Key-Value Pair
-
+#### Set a Value
 ```bash
-cargo run --bin client -- set <key> <value>
+cargo run --bin client -- set username "John Doe"
+```
+Expected output:
+```
+OK
 ```
 
-Example:
+#### Get a Value
 ```bash
-cargo run --bin client -- set name "John Doe"
-cargo run --bin client -- set age 30
+cargo run --bin client -- get username
+```
+Expected output:
+```
+John Doe
 ```
 
-### Getting a Value
-
+#### Delete a Value
 ```bash
-cargo run --bin client -- get <key>
+cargo run --bin client -- delete username
+```
+Expected output:
+```
+OK
 ```
 
-Example:
-```bash
-cargo run --bin client -- get name
-```
-
-### Deleting Keys
-
-```bash
-cargo run --bin client -- delete <key1> [key2...]
-```
-
-Example:
-```bash
-cargo run --bin client -- delete name age
-```
-
-### Compacting the Database
-
-To compact the database and reclaim space from deleted entries:
-
+#### Compact the Database
 ```bash
 cargo run --bin client -- compact
 ```
-
-This sends a SIGUSR1 signal to the server process to perform compaction. The server will:
-1. Receive the compaction signal
-2. Rewrite the database file with only active entries
-3. Remove any space used by deleted entries
-4. Maintain data consistency during the process
-
-## Testing with Multiple Clients
-
-You can test concurrent operations using multiple terminal windows:
-
-1. Start the server in one terminal:
-```bash
-cargo run --bin database -- serve
+Expected output:
+```
+Compaction signal sent to server (PID: xxxxx)
 ```
 
-2. In another terminal, set some initial data:
+### Interactive Mode
+
+Start an interactive session with the database:
 ```bash
-cargo run --bin client -- set name "John Doe"
-cargo run --bin client -- set age 30
-cargo run --bin client -- set city "New York"
+cargo run --bin client
 ```
 
-3. In multiple other terminals, run concurrent operations:
-```bash
-# Terminal 1
-cargo run --bin client -- get name
-
-# Terminal 2
-cargo run --bin client -- set age 31
-
-# Terminal 3
-cargo run --bin client -- delete city
+Example session:
+```
+Connected to database server at 127.0.0.1:7878
+Enter commands (type 'help' for usage, 'quit' to exit):
+> set name "Alice"
+OK
+> get name
+Alice
+> delete name
+OK
+> quit
+Goodbye!
 ```
 
-4. Test compaction by adding and deleting temporary data:
+## Testing
+
+### Running Tests
 ```bash
-# Add some temporary entries
-cargo run --bin client -- set temp1 "value1"
-cargo run --bin client -- set temp2 "value2"
+# Run all tests
+cargo test
 
-# Delete them to create wasted space
-cargo run --bin client -- delete temp1 temp2
+# Run specific test
+cargo test test_name
 
-# Trigger compaction
+# Run tests with output
+cargo test -- --nocapture
+```
+
+### Test Scenarios
+1. Basic Operations
+```bash
+# Set and get
+cargo run --bin client -- set test_key "test_value"
+cargo run --bin client -- get test_key
+```
+
+2. Concurrent Access
+```bash
+# Run in multiple terminals
+terminal1$ cargo run --bin client -- set key1 "value1"
+terminal2$ cargo run --bin client -- get key1
+terminal3$ cargo run --bin client -- set key1 "value2"
+```
+
+3. Compaction Test
+```bash
+# Add and delete multiple entries
+for i in {1..5}; do
+    cargo run --bin client -- set "key$i" "value$i"
+done
+for i in {1..3}; do
+    cargo run --bin client -- delete "key$i"
+done
 cargo run --bin client -- compact
-
-# Verify data is still intact
-cargo run --bin client -- get name
-cargo run --bin client -- get age
 ```
 
 ## Implementation Details
 
-### Thread Safety
-- Uses RwLock for concurrent access to the in-memory data structure
-- Implements file locking for safe file operations
-- Worker threads handle client connections independently
+### Storage Architecture
+- In-memory HashMap protected by RwLock for concurrent access
+- Cache layer for frequently accessed data
+- File-based persistence with atomic operations
+- Sorted storage in the persistence layer
+
+### Concurrency Model
+- Read-Write locks for safe concurrent access
+- Worker thread pool for connection handling
+- Global mutex for critical operations
+- Atomic operations for flag management
 
 ### Data Persistence
-- Data is stored in `db.txt` with key-value pairs separated by '|'
-- Each operation is immediately persisted to disk
-- Compaction removes deleted entries from the file
+- Immediate write-through to disk on modifications
+- Atomic file operations using temporary files
+- Safe compaction with backup preservation
+- Proper file permissions:
+  - Database file (db.txt): 0o600 (read/write for owner only)
+  - Cache file (cache.txt): 0o600 (read/write for owner only)
+  - PID file: 0o644 (readable by all, writable by owner)
 
-### Signal Handling
-- Server writes its PID to `keystonelight.pid`
-- Compaction is triggered via SIGUSR1 signal
-- Signal handler uses atomic flag for thread-safe coordination
+### Safety Features
+- Proper error handling and reporting
+- Cleanup of temporary files
+- Signal handling for graceful shutdown
+- Lock ordering to prevent deadlocks
 
-### Error Handling
-- Graceful handling of file operations
-- Proper cleanup of resources
-- Informative error messages for client operations
-
-## Network Testing
-
-You can also test the database using a simple TCP client like `netcat`:
-
-```bash
-# Set a key-value pair
-echo "set name John" | nc 127.0.0.1 7878
-
-# Get a value
-echo "get name" | nc 127.0.0.1 7878
-
-# Delete a key
-echo "delete name" | nc 127.0.0.1 7878
-```
-
-## Data Persistence
-
-The database automatically saves data to `db.txt` after each modification. The file format is:
-
-```
-key1|value1
-key2|value2
-...
-```
+## File Structure
+- `db.txt`: Main database file
+- `keystonelight.pid`: Server process ID file
+- `db.txt.tmp`: Temporary file for atomic operations
+- `cache.txt`: Cache storage (if enabled)
 
 ## Error Handling
 
-The database provides clear error messages for:
-- Invalid commands
-- Missing arguments
-- Non-existent keys
-- Network errors
-- File system errors
+Common error messages and their meanings:
+
+#### Database Operations
+```
+Error: Key not found
+```
+The requested key does not exist in the database or cache.
+
+```
+Error: Failed to acquire lock
+```
+Concurrent access conflict - retry the operation.
+
+```
+Error: Failed to write to database file
+Permission denied
+```
+Check file permissions (should be 0o600) and ownership.
+
+```
+Error: Cache file is corrupted
+```
+The cache file is invalid or corrupted. The server will recreate it.
+
+```
+Error: Database file is corrupted
+```
+The database file needs repair. Use the compact command to fix.
+
+#### Connection Errors
+```
+Error: Failed to connect to server
+Connection refused (os error 61)
+```
+Server is not running or the port is incorrect.
+
+```
+Error: Connection reset by peer
+```
+Server terminated the connection unexpectedly.
+
+#### System Errors
+```
+Error: Failed to create PID file
+Permission denied
+```
+Check directory permissions and ownership.
+
+```
+Error: Failed to send compaction signal
+No such process
+```
+Server PID file is stale or server is not running.
 
 ## Performance Considerations
+- Cache-first read operations
+- Sorted storage for efficient retrieval
+- Atomic file operations for consistency
+- Worker thread pool for connection handling
+- Efficient compaction strategy
 
-- The database uses in-memory storage with periodic file persistence
-- Multiple readers can access data simultaneously
-- Write operations are exclusive and block other writers
-- Each client connection runs in its own thread
-- The server maintains a pool of worker threads for accepting connections 
+## Troubleshooting
+
+### Common Issues
+1. **Server Already Running**
+   ```
+   Error: Address already in use
+   ```
+   Solution: Stop existing server or check `keystonelight.pid`
+
+2. **Permission Denied**
+   ```
+   Error: Permission denied (os error 13)
+   ```
+   Solution: Check file permissions in the project directory
+
+3. **Connection Refused**
+   ```
+   Error: Connection refused (os error 61)
+   ```
+   Solution: Ensure server is running (`cargo run --bin database -- serve`)
+
+### Debug Tips
+- Check server logs for connection information
+- Verify PID file exists and contains correct process ID
+- Use `ps` to check if server process is running
+- Monitor `db.txt` for changes during operations
+
+## Contributing
+Contributions are welcome! Please feel free to submit pull requests.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+- Rust community for excellent documentation and crates
+- Contributors and reviewers

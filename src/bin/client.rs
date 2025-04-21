@@ -1,16 +1,16 @@
+use nix::sys::signal::Signal;
+use nix::unistd::Pid;
+use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::net::TcpStream;
 use std::process;
-use std::fs;
-use nix::sys::signal::Signal;
-use nix::unistd::Pid;
 
 const SERVER_ADDR: &str = "127.0.0.1:7878";
 const PID_FILE: &str = "keystonelight.pid";
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    
+
     // Handle compact command separately
     if args.len() > 1 && args[1] == "compact" {
         if let Ok(pid_str) = fs::read_to_string(PID_FILE) {
@@ -38,19 +38,14 @@ fn main() {
     }
 
     // Interactive mode
-    let stream = match TcpStream::connect(SERVER_ADDR) {
-        Ok(stream) => stream,
-        Err(e) => {
-            eprintln!("Failed to connect to server: {}", e);
-            process::exit(1);
-        }
-    };
-
     println!("Connected to database server at {}", SERVER_ADDR);
     println!("Enter commands (type 'help' for usage, 'quit' to exit):");
 
-    let mut reader = BufReader::new(stream.try_clone().expect("Failed to clone stream"));
-    let mut writer = BufWriter::new(stream);
+    if let Err(e) = TcpStream::connect(SERVER_ADDR) {
+        eprintln!("Failed to connect to server: {}", e);
+        process::exit(1);
+    }
+
     let stdin = io::stdin();
     let mut stdin_lines = stdin.lock().lines();
 
@@ -96,22 +91,24 @@ fn main() {
 }
 
 fn send_command(command: &str) -> std::io::Result<()> {
-    let mut stream = TcpStream::connect(SERVER_ADDR)?;
+    let stream = TcpStream::connect(SERVER_ADDR)?;
     let mut reader = BufReader::new(&stream);
     let mut writer = BufWriter::new(&stream);
-    
+
     writeln!(writer, "{}", command)?;
     writer.flush()?;
-    
+
     let mut response = String::new();
     reader.read_line(&mut response)?;
-    
+
     let response = response.trim();
     if response.starts_with("ERROR") {
         eprintln!("{}", response);
+    } else if response.starts_with("OK ") {
+        println!("{}", &response[3..]);
     } else {
         println!("{}", response);
     }
-    
+
     Ok(())
-} 
+}

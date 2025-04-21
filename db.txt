@@ -1,6 +1,2 @@
-evan|li
-test2|Rust is fun
-name|John Doe
-winnie|chen
-test3|Value 3
-city|New York
+key4|value4
+key5|value5
