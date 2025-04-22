@@ -46,6 +46,8 @@
 
 use crate::protocol::parse_command;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
 
@@ -121,6 +123,64 @@ impl Client {
         let mut response = String::new();
         self.reader.read_line(&mut response)?;
         Ok(response)
+    }
+
+    /// Run the client in interactive mode
+    pub fn run_interactive(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("KeystoneLight Client - Interactive Mode");
+        println!("Type 'help' for available commands, 'quit' or 'exit' to exit");
+
+        let mut rl = Editor::<(), _>::new()?;
+        if rl.load_history(".keystone_history").is_err() {
+            println!("No previous history.");
+        }
+
+        loop {
+            let readline = rl.readline(">> ");
+            match readline {
+                Ok(line) => {
+                    rl.add_history_entry(line.as_str());
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+
+                    match line.to_lowercase().as_str() {
+                        "help" => {
+                            println!("Available commands:");
+                            println!("  SET <key> <value> - Set a key-value pair");
+                            println!("  GET <key> - Get the value for a key");
+                            println!("  DELETE <key> - Delete a key-value pair");
+                            println!("  help - Show this help message");
+                            println!("  quit/exit - Exit the client");
+                        }
+                        "quit" | "exit" => {
+                            rl.save_history(".keystone_history")?;
+                            return Ok(());
+                        }
+                        _ => {
+                            let response = self.send_command(line)?;
+                            println!("{}", response);
+                        }
+                    }
+                }
+                Err(ReadlineError::Interrupted) => {
+                    println!("CTRL-C");
+                    break;
+                }
+                Err(ReadlineError::Eof) => {
+                    println!("CTRL-D");
+                    break;
+                }
+                Err(err) => {
+                    println!("Error: {:?}", err);
+                    break;
+                }
+            }
+        }
+
+        rl.save_history(".keystone_history")?;
+        Ok(())
     }
 }
 
