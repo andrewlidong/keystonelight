@@ -1,6 +1,6 @@
 # KeystoneLight Database
 
-A lightweight, concurrent key-value database written in Rust, featuring in-memory storage with file persistence and efficient compaction.
+A lightweight, concurrent key-value database written in Rust, featuring in-memory storage with file persistence and proper Unix service behavior.
 
 ## Features
 
@@ -10,26 +10,30 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 - Multi-threaded server with configurable worker threads
 - TCP-based client-server communication
 - File-based storage with immediate persistence
+- Case-insensitive command handling
 
 ### Data Operations
 - `get`: Retrieve values with cache-first lookup
 - `set`: Store key-value pairs with immediate persistence
 - `delete`: Remove entries with atomic operations
-- `compact`: Remove deleted entries and optimize storage
+- `compact`: Trigger log compaction to optimize storage
 
 ### Performance & Safety
 - Thread pool for handling concurrent client connections
 - Cache layer for faster read operations
 - Atomic file operations for data integrity
 - Proper lock management to prevent deadlocks
-- Signal-based database management
+- Automatic log compaction when log size exceeds 1MB
+- Base64 encoding for binary data support
 
 ### System Features
 - Process ID tracking for external management
-- Graceful shutdown handling
+- Graceful shutdown handling (SIGTERM, SIGINT)
 - Error recovery and cleanup
 - File-system based persistence
-- Database compaction for space optimization
+- Proper Unix service behavior
+- Stale PID file cleanup on startup
+- File locking to prevent multiple instances
 
 ## Development Setup
 
@@ -46,7 +50,7 @@ git clone https://github.com/andrewlidong/keystonelight.git
 cd keystonelight
 
 # Build the project
-cargo build --release
+cargo build
 ```
 
 ### Development Tools
@@ -59,83 +63,38 @@ cargo build --release
 ### Starting the Server
 
 ```bash
-cargo run --bin database -- serve
+cargo run --bin database serve
 ```
 
 Expected output:
 ```
+Creating new log file at keystonelight.log
+Log file opened and locked successfully
+Replaying log file
+Replay complete, found 0 entries
 Server listening on 127.0.0.1:7878
 ```
 
 If the server is already running, you'll see:
 ```
-thread 'main' panicked at src/main.rs:329:51:
-Failed to bind to address: Os { code: 48, kind: AddrInUse, message: "Address already in use" }
+Server error: Server already running with PID <pid>
 ```
 
 To start a fresh server:
-1. Check for existing server process:
+1. Kill any existing server processes:
    ```bash
-   lsof -i :7878
+   pkill -9 -f "target/debug/database"
    ```
-2. Kill the existing process if found:
+2. Clean up any stale files:
    ```bash
-   kill <PID>
+   rm -f keystonelight.pid keystonelight.log
    ```
-3. Remove any stale PID file:
+3. Start the server again:
    ```bash
-   rm -f keystonelight.pid
+   cargo run --bin database serve
    ```
-4. Start the server again:
-   ```bash
-   cargo run --bin database -- serve
-   ```
-
-The server will:
-- Start listening on `127.0.0.1:7878`
-- Create a worker thread pool (default: 4 threads)
-- Write its PID to `keystonelight.pid`
-- Initialize the database from existing data (if any)
 
 ### Client Operations
-
-#### Set a Value
-```bash
-cargo run --bin client -- set username "Andrew Dong"
-```
-Expected output:
-```
-OK
-```
-
-#### Get a Value
-```bash
-cargo run --bin client -- get username
-```
-Expected output:
-```
-John Doe
-```
-
-#### Delete a Value
-```bash
-cargo run --bin client -- delete username
-```
-Expected output:
-```
-OK
-```
-
-#### Compact the Database
-```bash
-cargo run --bin client -- compact
-```
-Expected output:
-```
-Compaction signal sent to server (PID: xxxxx)
-```
-
-### Interactive Mode
 
 Start an interactive session with the database:
 ```bash
@@ -146,62 +105,103 @@ Example session:
 ```
 Connected to database server at 127.0.0.1:7878
 Enter commands (type 'help' for usage, 'quit' to exit):
-> set name "Alice"
+> help
+Available commands:
+  SET <key> <value>  - Set a key-value pair
+  GET <key>         - Get the value for a key
+  DELETE <key>      - Delete a key-value pair
+  COMPACT           - Trigger log compaction
+  quit/exit         - Exit the client
+
+> set andrew dong
 OK
-> get name
-Alice
-> delete name
+> get andrew
+dong
+> delete andrew
+OK
+> get andrew
+NOT_FOUND
+> compact
 OK
 > quit
 Goodbye!
 ```
 
-## Implementation Details
+### Command Examples
 
-### Storage Architecture
-- In-memory HashMap protected by RwLock for concurrent access
-- Cache layer for frequently accessed data
-- File-based persistence with atomic operations
-- Immediate write-through to disk on modifications
+Commands are case-insensitive:
+```bash
+SET key value
+set key value
+SeT key value
+```
 
-### Concurrency Model
-- Read-Write locks for safe concurrent access
-- Worker thread pool for connection handling
-- Global mutex for critical operations
-- Atomic operations for flag management
+Values with spaces:
+```bash
+SET key "value with spaces"
+SET key value\swith\sspaces
+```
 
-### Data Persistence
-- Immediate write-through to disk on modifications
-- Atomic file operations using temporary files
-- Safe compaction with backup preservation
-- File permissions:
-  - Database file (db.txt): 0o644 (readable by all, writable by owner)
-  - Cache file (cache.txt): 0o644 (readable by all, writable by owner)
-  - PID file: 0o644 (readable by all, writable by owner)
+Binary data (automatically base64 encoded):
+```bash
+SET binary_key <binary_data>
+```
 
-### Safety Features
-- Proper error handling and reporting
-- Cleanup of temporary files
+### Signal Handling
+
+The server handles the following signals:
+- SIGTERM: Graceful shutdown
+- SIGINT: Graceful shutdown (Ctrl+C)
+
+On receiving these signals, the server will:
+1. Stop accepting new connections
+2. Complete any in-progress operations
+3. Clean up resources (PID file, log file locks)
+4. Exit gracefully
+
+### Log Compaction
+
+The server automatically triggers log compaction when:
+- The log file size exceeds 1MB
+- The `compact` command is issued
+
+Compaction:
+1. Creates a new log file
+2. Replays all valid operations
+3. Removes deleted keys and overwritten values
+4. Swaps the new log file with the old one
+5. Releases the old log file
+
+## Architecture
+
+### Server
+- Multi-threaded TCP server
+- Thread pool for handling client connections
 - Signal handling for graceful shutdown
-- Lock ordering to prevent deadlocks
+- PID file management
+- File locking for single instance
 
-## File Structure
-- `db.txt`: Main database file
-- `keystonelight.pid`: Server process ID file
-- `db.txt.tmp`: Temporary file for atomic operations
-- `cache.txt`: Cache storage (if enabled)
+### Storage
+- In-memory cache with RwLock
+- Write-ahead logging for persistence
+- Automatic log compaction
+- Base64 encoding for binary data
+
+### Client
+- Interactive command-line interface
+- Case-insensitive command parsing
+- Support for spaces in values
+- Binary data handling
 
 ## Error Handling
 
-Common error messages and their meanings:
+The server implements comprehensive error handling:
+- Connection errors
+- File system errors
+- Lock acquisition failures
+- Invalid command parsing
+- Resource cleanup on errors
 
-#### Server Startup Errors
-```
-Failed to bind to address: Os { code: 48, kind: AddrInUse, message: "Address already in use" }
-```
-The server port (7878) is already in use. Follow the steps in "Starting the Server" section to resolve.
+## License
 
-#### Database Operations
-```
-Error: Key not found
-```
+MIT License - See LICENSE file for details

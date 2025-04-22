@@ -10,12 +10,19 @@ readme = "README.md"
 keywords = ["database", "key-value", "concurrent", "persistence"]
 categories = ["database", "concurrency"]
 
+[lib]
+name = "keystonelight"
+path = "src/lib.rs"
+
 [dependencies]
 fs2 = "0.4"
 signal-hook = "0.3"
 nix = "0.26"
 lazy_static = "1.4"
 ctrlc = "3.4"
+flock = "0.2.0"
+libc = "0.2"
+base64 = "0.21"
 
 [dev-dependencies]
 tempfile = "3.8"  # For testing with temporary files

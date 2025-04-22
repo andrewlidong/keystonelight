@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 use std::fs;
@@ -8,86 +9,105 @@ use std::process;
 const SERVER_ADDR: &str = "127.0.0.1:7878";
 const PID_FILE: &str = "keystonelight.pid";
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-
-    // Handle compact command separately
-    if args.len() > 1 && args[1] == "compact" {
-        if let Ok(pid_str) = fs::read_to_string(PID_FILE) {
-            if let Ok(pid) = pid_str.parse::<i32>() {
-                if let Err(e) = nix::sys::signal::kill(Pid::from_raw(pid), Signal::SIGUSR1) {
-                    eprintln!("Failed to send compaction signal: {}", e);
-                    process::exit(1);
-                }
-                println!("Compaction signal sent to server (PID: {})", pid);
-                process::exit(0);
-            }
-        }
-        eprintln!("Failed to read server PID from {}", PID_FILE);
-        process::exit(1);
-    }
-
-    // Handle direct commands
-    if args.len() > 1 {
-        let command = args[1..].join(" ");
-        if let Err(e) = send_command(&command) {
-            eprintln!("Error: {}", e);
-            process::exit(1);
-        }
-        process::exit(0);
-    }
-
-    // Interactive mode
-    println!("Connected to database server at {}", SERVER_ADDR);
+fn main() -> io::Result<()> {
+    println!("Connecting to database server at {}...", SERVER_ADDR);
+    let stream = TcpStream::connect(SERVER_ADDR)?;
+    let mut stream_writer = stream.try_clone()?;
+    let mut stream_reader = BufReader::new(stream);
+    println!("Connected successfully!");
     println!("Enter commands (type 'help' for usage, 'quit' to exit):");
 
-    if let Err(e) = TcpStream::connect(SERVER_ADDR) {
-        eprintln!("Failed to connect to server: {}", e);
-        process::exit(1);
-    }
-
     let stdin = io::stdin();
-    let mut stdin_lines = stdin.lock().lines();
+    let mut reader = stdin.lock();
+    let mut line = String::new();
 
-    loop {
-        print!("> ");
-        io::stdout().flush().unwrap();
+    print!("> ");
+    io::stdout().flush()?;
 
-        let line = match stdin_lines.next() {
-            Some(Ok(line)) => line,
-            Some(Err(e)) => {
-                eprintln!("Error reading input: {}", e);
-                break;
-            }
-            None => break,
-        };
-
-        let line = line.trim();
-        if line.is_empty() {
+    while reader.read_line(&mut line)? > 0 {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            line.clear();
+            print!("> ");
+            io::stdout().flush()?;
             continue;
         }
 
-        match line {
-            "quit" | "exit" => break,
+        match trimmed {
+            "quit" | "exit" => {
+                println!("Goodbye!");
+                break;
+            }
             "help" => {
                 println!("Available commands:");
-                println!("  get <key>           - Retrieve value for key");
-                println!("  set <key> <value>   - Set key to value");
-                println!("  delete <key>        - Delete key");
-                println!("  help                - Show this help");
-                println!("  quit                - Exit the client");
-                continue;
+                println!("  SET <key> <value>  - Set a key-value pair");
+                println!("  GET <key>         - Get the value for a key");
+                println!("  DELETE <key>      - Delete a key-value pair");
+                println!("  COMPACT           - Trigger log compaction");
+                println!("  quit/exit         - Exit the client");
             }
-            _ => {}
+            _ => {
+                let parts: Vec<&str> = trimmed.splitn(3, ' ').collect();
+                match parts.as_slice() {
+                    [cmd, key, value] if cmd.to_uppercase() == "SET" => {
+                        let value = value.as_bytes();
+                        writeln!(
+                            stream_writer,
+                            "SET {} {}",
+                            key,
+                            String::from_utf8_lossy(value)
+                        )?;
+                        let mut response = String::new();
+                        stream_reader.read_line(&mut response)?;
+                        print!("{}", response);
+                    }
+                    [cmd, key] if cmd.to_uppercase() == "GET" => {
+                        writeln!(stream_writer, "GET {}", key)?;
+                        let mut response = String::new();
+                        stream_reader.read_line(&mut response)?;
+                        if response.starts_with("VALUE ") {
+                            let value = response.trim().split_once(' ').unwrap().1;
+                            if value.starts_with("base64:") {
+                                // Handle base64-encoded binary data
+                                let encoded = &value[7..]; // Skip "base64:" prefix
+                                if let Ok(bytes) = BASE64.decode(encoded) {
+                                    println!("<binary data of {} bytes>", bytes.len());
+                                } else {
+                                    println!("Error: Invalid base64 encoding");
+                                }
+                            } else {
+                                // Regular text value
+                                println!("{}", value);
+                            }
+                        } else {
+                            print!("{}", response);
+                        }
+                    }
+                    [cmd, key] if cmd.to_uppercase() == "DELETE" => {
+                        writeln!(stream_writer, "DELETE {}", key)?;
+                        let mut response = String::new();
+                        stream_reader.read_line(&mut response)?;
+                        print!("{}", response);
+                    }
+                    [cmd] if cmd.to_uppercase() == "COMPACT" => {
+                        writeln!(stream_writer, "COMPACT")?;
+                        let mut response = String::new();
+                        stream_reader.read_line(&mut response)?;
+                        print!("{}", response);
+                    }
+                    _ => {
+                        println!("Error: Invalid command. Type 'help' for usage.");
+                    }
+                }
+            }
         }
 
-        if let Err(e) = send_command(line) {
-            eprintln!("Error: {}", e);
-            break;
-        }
+        line.clear();
+        print!("> ");
+        io::stdout().flush()?;
     }
 
-    println!("Goodbye!");
+    Ok(())
 }
 
 fn send_command(command: &str) -> std::io::Result<()> {
@@ -95,7 +115,19 @@ fn send_command(command: &str) -> std::io::Result<()> {
     let mut reader = BufReader::new(&stream);
     let mut writer = BufWriter::new(&stream);
 
-    writeln!(writer, "{}", command)?;
+    // Format the command according to the protocol
+    let formatted_command = match command.split_whitespace().collect::<Vec<&str>>().as_slice() {
+        ["get", key] => format!("get {}", key),
+        ["set", key, value @ ..] => format!("set {} {}", key, value.join(" ")),
+        ["delete", key] => format!("delete {}", key),
+        ["compact"] => "compact".to_string(),
+        _ => {
+            eprintln!("Invalid command format");
+            return Ok(());
+        }
+    };
+
+    writeln!(writer, "{}", formatted_command)?;
     writer.flush()?;
 
     let mut response = String::new();
