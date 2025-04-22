@@ -1,6 +1,7 @@
 use crate::storage::log::{LogEntry, LogFile};
 use std::collections::HashMap;
 use std::io;
+use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 
 // Currently unused file paths
@@ -16,7 +17,11 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> io::Result<Self> {
-        let mut log = LogFile::new()?;
+        Self::with_log_path("keystonelight.log")
+    }
+
+    pub fn with_log_path<P: AsRef<Path>>(log_path: P) -> io::Result<Self> {
+        let mut log = LogFile::with_path(log_path)?;
         let cache = Arc::new(RwLock::new(HashMap::new()));
 
         // Replay the log to build the cache

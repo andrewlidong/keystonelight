@@ -4,6 +4,7 @@
 //! commands to manipulate the underlying key-value store. It includes features
 //! like PID file management, signal handling, and graceful shutdown.
 
+use crate::protocol::{Command, Response};
 use crate::storage::Database;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use libc;
@@ -11,6 +12,7 @@ use signal_hook::iterator::Signals;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -20,8 +22,6 @@ use std::time::{Duration, Instant};
 
 /// The address the server listens on
 const SERVER_ADDR: &str = "127.0.0.1:7878";
-/// The PID file path
-const PID_FILE: &str = "keystonelight.pid";
 /// Maximum time to wait for port binding
 const BIND_TIMEOUT: Duration = Duration::from_secs(5);
 /// Interval between port binding retries
@@ -30,35 +30,49 @@ const BIND_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 /// A server instance that manages client connections and processes commands.
 pub struct Server {
     /// The underlying key-value store
-    db: Arc<Mutex<Database>>,
+    storage: Arc<Mutex<Database>>,
     /// The TCP listener for accepting connections
     listener: TcpListener,
     /// Flag indicating if the server should continue running
     running: Arc<AtomicBool>,
+    /// Path to the PID file
+    pid_file: PathBuf,
+    /// Path to the log file
+    log_file: PathBuf,
 }
 
 impl Server {
-    fn cleanup_stale_pid_file() -> io::Result<()> {
-        if let Ok(pid_str) = fs::read_to_string(PID_FILE) {
+    fn cleanup_stale_pid_file(pid_file: &Path) -> io::Result<()> {
+        if let Ok(pid_str) = fs::read_to_string(pid_file) {
             if let Ok(pid) = pid_str.trim().parse::<u32>() {
                 if !process_exists(pid) {
                     println!("Cleaning up stale PID file from process {}", pid);
-                    fs::remove_file(PID_FILE)?;
+                    fs::remove_file(pid_file)?;
                 }
             } else {
                 // Invalid PID in file, clean it up
-                fs::remove_file(PID_FILE)?;
+                fs::remove_file(pid_file)?;
             }
         }
         Ok(())
     }
 
     pub fn new() -> io::Result<Self> {
+        Self::with_paths("keystonelight.pid", "keystonelight.log")
+    }
+
+    pub fn with_paths<P1: AsRef<Path>, P2: AsRef<Path>>(
+        pid_file: P1,
+        log_file: P2,
+    ) -> io::Result<Self> {
+        let pid_file = pid_file.as_ref().to_path_buf();
+        let log_file = log_file.as_ref().to_path_buf();
+
         // Clean up any stale PID file
-        Self::cleanup_stale_pid_file()?;
+        Self::cleanup_stale_pid_file(&pid_file)?;
 
         // Check if PID file exists and process is running
-        if let Ok(pid_str) = fs::read_to_string(PID_FILE) {
+        if let Ok(pid_str) = fs::read_to_string(&pid_file) {
             if let Ok(pid) = pid_str.trim().parse::<u32>() {
                 if process_exists(pid) {
                     return Err(io::Error::new(
@@ -71,9 +85,9 @@ impl Server {
 
         // Write PID file
         let pid = process::id();
-        fs::write(PID_FILE, format!("{}\n", pid))?;
+        fs::write(&pid_file, format!("{}\n", pid))?;
 
-        let db = Arc::new(Mutex::new(Database::new()?));
+        let storage = Arc::new(Mutex::new(Database::with_log_path(&log_file)?));
         let start_time = Instant::now();
         let running = Arc::new(AtomicBool::new(true));
 
@@ -82,15 +96,17 @@ impl Server {
                 Ok(listener) => {
                     println!("Server listening on {}", SERVER_ADDR);
                     return Ok(Self {
-                        db,
+                        storage,
                         listener,
                         running,
+                        pid_file,
+                        log_file,
                     });
                 }
                 Err(e) => {
                     if start_time.elapsed() >= BIND_TIMEOUT {
                         // Clean up PID file if we fail to bind
-                        let _ = fs::remove_file(PID_FILE);
+                        let _ = fs::remove_file(&pid_file);
                         return Err(io::Error::new(
                             io::ErrorKind::AddrInUse,
                             format!(
@@ -111,6 +127,7 @@ impl Server {
         // Set up signal handlers
         let mut signals = Signals::new(&[libc::SIGTERM, libc::SIGINT])?;
         let running = Arc::clone(&self.running);
+        let pid_file = self.pid_file.clone();
 
         thread::spawn(move || {
             for sig in signals.forever() {
@@ -118,7 +135,7 @@ impl Server {
                     libc::SIGTERM | libc::SIGINT => {
                         println!("Received signal {}, shutting down...", sig);
                         // Clean up PID file before setting running to false
-                        let _ = fs::remove_file(PID_FILE);
+                        let _ = fs::remove_file(&pid_file);
                         running.store(false, Ordering::SeqCst);
                         break;
                     }
@@ -127,27 +144,33 @@ impl Server {
             }
         });
 
-        for stream in self.listener.incoming() {
-            if !self.running.load(Ordering::SeqCst) {
-                break;
-            }
-            match stream {
-                Ok(stream) => {
-                    let db = Arc::clone(&self.db);
+        // Set non-blocking mode for the listener
+        self.listener.set_nonblocking(true)?;
+
+        while self.running.load(Ordering::SeqCst) {
+            match self.listener.accept() {
+                Ok((stream, _)) => {
+                    let storage = Arc::clone(&self.storage);
                     thread::spawn(move || {
-                        if let Err(e) = handle_client(stream, db) {
+                        if let Err(e) = handle_client(stream, storage) {
                             eprintln!("Error handling client: {}", e);
                         }
                     });
                 }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    // No incoming connection, sleep a bit and continue
+                    thread::sleep(Duration::from_millis(10));
+                    continue;
+                }
                 Err(e) => {
                     eprintln!("Error accepting connection: {}", e);
+                    break;
                 }
             }
         }
 
         // Cleanup (in case we exit the loop without a signal)
-        let _ = fs::remove_file(PID_FILE);
+        let _ = fs::remove_file(&self.pid_file);
         Ok(())
     }
 }
@@ -155,7 +178,7 @@ impl Server {
 impl Drop for Server {
     fn drop(&mut self) {
         // Clean up PID file when server is dropped
-        let _ = fs::remove_file(PID_FILE);
+        let _ = fs::remove_file(&self.pid_file);
     }
 }
 
@@ -165,53 +188,60 @@ fn process_exists(pid: u32) -> bool {
 }
 
 fn handle_client(mut stream: TcpStream, storage: Arc<Mutex<Database>>) -> io::Result<()> {
+    // Set non-blocking mode for the stream
+    stream.set_nonblocking(false)?;
+
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
     reader.read_line(&mut line)?;
     let command = line.trim();
     println!("Received raw command: '{}'", command);
 
-    let mut parts = command.splitn(3, ' ');
-    let cmd = parts.next().map(|s| s.to_uppercase());
-    let key = parts.next().map(|s| s.to_string());
-    let value = parts.next().map(|s| s.as_bytes().to_vec());
-
-    println!(
-        "Command parts: cmd={:?}, key={:?}, value={:?}",
-        cmd, key, value
-    );
-
-    let response = match (cmd.as_deref(), key, value) {
-        (Some("GET"), Some(key), None) => {
-            let storage = storage.lock().unwrap();
-            match storage.get(&key) {
-                Some(value) => match String::from_utf8(value.clone()) {
-                    Ok(text) => format!("OK {}", text),
-                    Err(_) => format!("OK base64:{}", BASE64.encode(value)),
-                },
-                None => "NOT_FOUND".to_string(),
+    let response = match crate::protocol::parse_command(command) {
+        Some(cmd) => {
+            println!("Command parts: {:?}", cmd);
+            match cmd {
+                crate::protocol::Command::Get(key) => {
+                    let storage = storage.lock().unwrap();
+                    match storage.get(&key) {
+                        Some(value) => {
+                            // Check if the value contains any non-printable characters
+                            let is_binary = value
+                                .iter()
+                                .any(|&b| !b.is_ascii_graphic() && !b.is_ascii_whitespace());
+                            if is_binary {
+                                format!("OK base64:{}", BASE64.encode(&value))
+                            } else {
+                                match String::from_utf8(value.clone()) {
+                                    Ok(text) => format!("OK {}", text),
+                                    Err(_) => format!("OK base64:{}", BASE64.encode(&value)),
+                                }
+                            }
+                        }
+                        None => "NOT_FOUND".to_string(),
+                    }
+                }
+                crate::protocol::Command::Set(key, value) => {
+                    let mut storage = storage.lock().unwrap();
+                    storage.set(&key, &value)?;
+                    "OK".to_string()
+                }
+                crate::protocol::Command::Delete(key) => {
+                    let mut storage = storage.lock().unwrap();
+                    storage.delete(&key)?;
+                    "OK".to_string()
+                }
+                crate::protocol::Command::Compact => {
+                    let mut storage = storage.lock().unwrap();
+                    storage.compact()?;
+                    "OK".to_string()
+                }
             }
         }
-        (Some("SET"), Some(key), Some(value)) => {
-            let storage = storage.lock().unwrap();
-            storage.set(&key, &value)?;
-            "OK".to_string()
-        }
-        (Some("DELETE"), Some(key), None) => {
-            println!("Processing DELETE command for key: {}", key);
-            let storage = storage.lock().unwrap();
-            storage.delete(&key)?;
-            println!("Successfully deleted key: {}", key);
-            "OK".to_string()
-        }
-        (Some("COMPACT"), None, None) => {
-            let storage = storage.lock().unwrap();
-            storage.compact()?;
-            "OK".to_string()
-        }
-        _ => "ERROR Invalid command".to_string(),
+        None => "ERROR Invalid command".to_string(),
     };
 
+    println!("Sending response: {}", response);
     writeln!(stream, "{}", response)?;
     stream.flush()?;
     Ok(())

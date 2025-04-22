@@ -4,8 +4,9 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Seek, Write};
 use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 
-const LOG_FILE: &str = "keystonelight.log";
+const DEFAULT_LOG_FILE: &str = "keystonelight.log";
 const TEMP_LOG_FILE: &str = "keystonelight.log.tmp";
 const MAX_LOG_SIZE: usize = 1024 * 1024; // 1MB
 
@@ -69,17 +70,23 @@ impl LogEntry {
 pub struct LogFile {
     file: File,
     current_size: usize,
+    path: PathBuf,
 }
 
 impl LogFile {
     pub fn new() -> io::Result<Self> {
-        println!("Creating new log file at {}", LOG_FILE);
+        Self::with_path(DEFAULT_LOG_FILE)
+    }
+
+    pub fn with_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let path = path.as_ref().to_path_buf();
+        println!("Creating new log file at {}", path.display());
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .read(true)
             .mode(0o600)
-            .open(LOG_FILE)?;
+            .open(&path)?;
 
         // Try to acquire an exclusive lock on the file
         if let Err(e) = file.try_lock_exclusive() {
@@ -94,14 +101,19 @@ impl LogFile {
 
         file.sync_all()?;
         println!("Log file opened and locked successfully");
-        Ok(Self { file, current_size })
+        Ok(Self {
+            file,
+            current_size,
+            path,
+        })
     }
 
     pub fn append(&mut self, entry: &LogEntry) -> io::Result<()> {
         let entry_str = entry.to_string();
         println!("Appending log entry: {}", entry_str.trim());
         self.file.write_all(entry_str.as_bytes())?;
-        self.current_size += entry_str.len();
+        self.file.write_all(b"\n")?;
+        self.current_size += entry_str.len() + 1;
         self.file.sync_all()?; // Ensure data is written to disk
         println!("Log entry appended and synced");
 
@@ -158,65 +170,55 @@ impl LogFile {
                 LogEntry::Delete(key) => {
                     current_state.insert(key, None);
                 }
-                LogEntry::Compact => {
-                    // Skip compact entries in the compacted log
-                    continue;
-                }
+                LogEntry::Compact => continue,
             }
         }
 
         // Create a temporary file for the compacted log
+        let temp_path = self.path.with_extension("tmp");
         let mut temp_file = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .mode(0o600)
-            .open(TEMP_LOG_FILE)?;
+            .open(&temp_path)?;
 
         // Write only the current state to the temporary file
         for (key, value_opt) in current_state {
-            match value_opt {
-                Some(value) => {
-                    let entry = LogEntry::Set(key.clone(), value.clone());
-                    writeln!(temp_file, "{}", entry.to_string())?;
-                }
-                None => {
-                    // Skip deleted entries in the compacted log
-                    continue;
-                }
+            if let Some(value) = value_opt {
+                let entry = LogEntry::Set(key, value);
+                writeln!(temp_file, "{}", entry.to_string())?;
             }
         }
         temp_file.sync_all()?;
 
-        // Get the file descriptor before dropping
-        let old_file = std::mem::replace(
+        // Release the lock on the old file
+        self.file.unlock()?;
+
+        // Close both files
+        drop(temp_file);
+        drop(std::mem::replace(
             &mut self.file,
             OpenOptions::new()
                 .create(true)
                 .append(true)
                 .read(true)
                 .mode(0o600)
-                .open(TEMP_LOG_FILE)?,
-        );
+                .open(&temp_path)?,
+        ));
 
-        // Close the old file to release the lock
-        drop(old_file);
+        // Rename the temporary file to the main log file
+        fs::rename(&temp_path, &self.path)?;
 
-        // Rename the temporary file to the actual log file
-        fs::rename(TEMP_LOG_FILE, LOG_FILE)?;
-
-        // Reopen the log file
+        // Open and lock the new file
         self.file = OpenOptions::new()
             .create(true)
             .append(true)
             .read(true)
             .mode(0o600)
-            .open(LOG_FILE)?;
-
-        // Reacquire the lock
+            .open(&self.path)?;
         self.file.try_lock_exclusive()?;
 
-        println!("Log compaction completed successfully");
         Ok(())
     }
 }

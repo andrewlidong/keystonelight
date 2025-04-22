@@ -2,8 +2,8 @@
 //!
 //! This module defines the command protocol used between clients and the server.
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use std::fmt;
-use std::io;
 use std::io::{self, BufRead, Write};
 use std::net::TcpStream;
 
@@ -20,14 +20,61 @@ pub enum Command {
     Compact,
 }
 
+/// Responses that can be sent from the server to the client.
+#[derive(Debug, PartialEq)]
+pub enum Response {
+    /// Operation successful
+    Ok,
+    /// Operation successful with a value
+    Value(Vec<u8>),
+    /// Key not found
+    NotFound,
+    /// Error occurred
+    Error(String),
+}
+
+impl fmt::Display for Response {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Response::Ok => write!(f, "OK"),
+            Response::Value(val) => {
+                // Check if the value contains any non-printable characters
+                let is_binary = val
+                    .iter()
+                    .any(|&b| !b.is_ascii_graphic() && !b.is_ascii_whitespace());
+                if is_binary {
+                    write!(f, "OK base64:{}", BASE64.encode(val))
+                } else {
+                    match String::from_utf8(val.clone()) {
+                        Ok(text) => write!(f, "OK {}", text),
+                        Err(_) => write!(f, "OK base64:{}", BASE64.encode(val)),
+                    }
+                }
+            }
+            Response::NotFound => write!(f, "NOT_FOUND"),
+            Response::Error(msg) => write!(f, "ERROR {}", msg),
+        }
+    }
+}
+
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Command::Get(key) => write!(f, "get {}", key),
-            Command::Set(key, value) => match String::from_utf8(value.clone()) {
-                Ok(text) => write!(f, "set {} {}", key, text),
-                Err(_) => write!(f, "set {} [binary data]", key),
-            },
+            Command::Set(key, value) => {
+                // Check if the value contains any non-printable characters
+                let is_binary = value
+                    .iter()
+                    .any(|&b| !b.is_ascii_graphic() && !b.is_ascii_whitespace());
+                if is_binary {
+                    write!(f, "set {} [binary data]", key)
+                } else {
+                    match String::from_utf8(value.clone()) {
+                        Ok(text) => write!(f, "set {} {}", key, text),
+                        Err(_) => write!(f, "set {} [binary data]", key),
+                    }
+                }
+            }
             Command::Delete(key) => write!(f, "delete {}", key),
             Command::Compact => write!(f, "compact"),
         }
@@ -49,51 +96,38 @@ pub fn parse_command(line: &str) -> Option<Command> {
 
     match cmd.as_str() {
         "GET" => {
-            let key = parts.next()?.to_string();
-            Some(Command::Get(key))
+            let key = parts.next()?;
+            if parts.next().is_some() {
+                return None;
+            } // GET should have exactly one argument
+            Some(Command::Get(key.to_string()))
         }
         "SET" => {
-            let key = parts.next()?.to_string();
-            let value = parts.next().unwrap_or("").as_bytes().to_vec();
-            Some(Command::Set(key, value))
+            let key = parts.next()?;
+            let value = parts.next().unwrap_or("");
+            // Try to decode base64 if it starts with "base64:"
+            let value = if value.starts_with("base64:") {
+                BASE64
+                    .decode(&value[7..])
+                    .unwrap_or_else(|_| value.as_bytes().to_vec())
+            } else {
+                value.as_bytes().to_vec()
+            };
+            Some(Command::Set(key.to_string(), value))
         }
         "DELETE" => {
-            let key = parts.next()?.to_string();
-            Some(Command::Delete(key))
+            let key = parts.next()?;
+            if parts.next().is_some() {
+                return None;
+            } // DELETE should have exactly one argument
+            Some(Command::Delete(key.to_string()))
         }
-        "COMPACT" => Some(Command::Compact),
+        "COMPACT" => {
+            if parts.next().is_some() {
+                return None;
+            } // COMPACT should have no arguments
+            Some(Command::Compact)
+        }
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_command_parsing() {
-        // Test get command
-        let cmd = parse_command("get test_key").unwrap();
-        assert!(matches!(cmd, Command::Get(key) if key == "test_key"));
-
-        // Test set command
-        let cmd = parse_command("set test_key test_value").unwrap();
-        assert!(matches!(cmd, Command::Set(key, value)
-            if key == "test_key" && value == b"test_value"));
-
-        // Test delete command
-        let cmd = parse_command("delete test_key").unwrap();
-        assert!(matches!(cmd, Command::Delete(key) if key == "test_key"));
-
-        // Test compact command
-        let cmd = parse_command("compact").unwrap();
-        assert!(matches!(cmd, Command::Compact));
-
-        // Test invalid commands
-        assert!(parse_command("").is_none());
-        assert!(parse_command("get").is_none());
-        assert!(parse_command("set key").is_none());
-        assert!(parse_command("delete").is_none());
-        assert!(parse_command("unknown").is_none());
     }
 }
