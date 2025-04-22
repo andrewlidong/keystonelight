@@ -87,7 +87,7 @@ fn decode_response(response: &str) -> Option<String> {
     }
 }
 
-fn start_server(temp_dir: &tempfile::TempDir) -> Arc<AtomicBool> {
+fn start_server(temp_dir: &tempfile::TempDir, num_threads: usize) -> Arc<AtomicBool> {
     let test_id = Uuid::new_v4();
     let pid_file = temp_dir
         .path()
@@ -102,7 +102,7 @@ fn start_server(temp_dir: &tempfile::TempDir) -> Arc<AtomicBool> {
     let running_clone = Arc::clone(&running);
 
     thread::spawn(move || {
-        let server = Server::with_paths(&pid_file, &log_file).unwrap();
+        let server = Server::with_paths(&pid_file, &log_file, num_threads).unwrap();
         while running_clone.load(Ordering::SeqCst) {
             if let Err(e) = server.run() {
                 eprintln!("Server error: {}", e);
@@ -119,7 +119,7 @@ fn start_server(temp_dir: &tempfile::TempDir) -> Arc<AtomicBool> {
 #[test]
 fn test_server_basic_operations() {
     let temp_dir = tempdir().unwrap();
-    let running = start_server(&temp_dir);
+    let running = start_server(&temp_dir, 4);
 
     // Test SET operation
     let response = send_command("set test_key test_value").unwrap();
@@ -147,7 +147,7 @@ fn test_server_basic_operations() {
 #[test]
 fn test_server_concurrent_clients() {
     let temp_dir = tempdir().unwrap();
-    let running = start_server(&temp_dir);
+    let running = start_server(&temp_dir, 4);
 
     // Spawn multiple client threads
     let mut handles = vec![];
@@ -184,7 +184,7 @@ fn test_server_concurrent_clients() {
 #[test]
 fn test_server_error_handling() {
     let temp_dir = tempdir().unwrap();
-    let running = start_server(&temp_dir);
+    let running = start_server(&temp_dir, 4);
 
     // Test invalid command
     let response = send_command("invalid command").unwrap();
@@ -202,7 +202,7 @@ fn test_server_error_handling() {
 #[test]
 fn test_server_binary_data() {
     let temp_dir = tempdir().unwrap();
-    let running = start_server(&temp_dir);
+    let running = start_server(&temp_dir, 4);
 
     // Test binary data
     let binary_data = vec![0, 1, 2, 3];
@@ -218,6 +218,89 @@ fn test_server_binary_data() {
     assert!(response.starts_with("VALUE base64:"));
     let value = decode_response(&response).unwrap();
     assert_eq!(value.as_bytes(), binary_data);
+
+    // Clean up
+    running.store(false, Ordering::SeqCst);
+    thread::sleep(Duration::from_millis(500));
+}
+
+#[test]
+fn test_server_thread_pool_configurations() {
+    let temp_dir = tempdir().unwrap();
+
+    // Test with different thread pool sizes
+    for num_threads in [1, 2, 4, 8] {
+        let running = start_server(&temp_dir, num_threads);
+
+        // Test basic operations with each thread pool size
+        let response = send_command("set test_key test_value").unwrap();
+        assert_eq!(response, "OK");
+
+        let response = send_command("get test_key").unwrap();
+        assert!(response.starts_with("VALUE "));
+        let value = decode_response(&response).unwrap();
+        assert_eq!(value, "test_value");
+
+        // Test concurrent operations
+        let mut handles = vec![];
+        for i in 0..num_threads * 2 {
+            // Test with more clients than threads
+            let handle = thread::spawn(move || {
+                let key = format!("key{}", i);
+                let value = format!("value{}", i);
+
+                let response = send_command(&format!("set {} {}", key, value)).unwrap();
+                assert_eq!(response, "OK");
+
+                let response = send_command(&format!("get {}", key)).unwrap();
+                assert!(response.starts_with("VALUE "));
+                let value_back = decode_response(&response).unwrap();
+                assert_eq!(value_back, value);
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Clean up
+        running.store(false, Ordering::SeqCst);
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
+#[test]
+fn test_server_thread_pool_stress() {
+    let temp_dir = tempdir().unwrap();
+    let running = start_server(&temp_dir, 4); // Test with 4 threads
+
+    // Create many concurrent clients to stress the thread pool
+    let mut handles = vec![];
+    for i in 0..100 {
+        let handle = thread::spawn(move || {
+            let key = format!("stress_key{}", i);
+            let value = format!("stress_value{}", i);
+
+            // Perform multiple operations
+            for _ in 0..10 {
+                let response = send_command(&format!("set {} {}", key, value)).unwrap();
+                assert_eq!(response, "OK");
+
+                let response = send_command(&format!("get {}", key)).unwrap();
+                assert!(response.starts_with("VALUE "));
+                let value_back = decode_response(&response).unwrap();
+                assert_eq!(value_back, value);
+
+                thread::sleep(Duration::from_millis(10)); // Add small delay
+            }
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
 
     // Clean up
     running.store(false, Ordering::SeqCst);

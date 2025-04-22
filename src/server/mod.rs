@@ -5,6 +5,7 @@
 //! like PID file management, signal handling, and graceful shutdown.
 
 use crate::storage::Database;
+use crate::thread_pool::ThreadPool;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use libc;
 use signal_hook::iterator::Signals;
@@ -25,6 +26,8 @@ const SERVER_ADDR: &str = "127.0.0.1:7878";
 const BIND_TIMEOUT: Duration = Duration::from_secs(5);
 /// Interval between port binding retries
 const BIND_RETRY_INTERVAL: Duration = Duration::from_millis(100);
+/// Default number of worker threads
+const DEFAULT_THREAD_COUNT: usize = 4;
 
 /// A server instance that manages client connections and processes commands.
 pub struct Server {
@@ -36,6 +39,8 @@ pub struct Server {
     running: Arc<AtomicBool>,
     /// Path to the PID file
     pid_file: PathBuf,
+    /// Thread pool for handling client connections
+    thread_pool: ThreadPool,
 }
 
 impl Server {
@@ -55,12 +60,17 @@ impl Server {
     }
 
     pub fn new() -> io::Result<Self> {
-        Self::with_paths("keystonelight.pid", "keystonelight.log")
+        Self::with_paths(
+            "keystonelight.pid",
+            "keystonelight.log",
+            DEFAULT_THREAD_COUNT,
+        )
     }
 
     pub fn with_paths<P1: AsRef<Path>, P2: AsRef<Path>>(
         pid_file: P1,
-        _log_file: P2,
+        log_file: P2,
+        num_threads: usize,
     ) -> io::Result<Self> {
         let pid_file = pid_file.as_ref().to_path_buf();
 
@@ -84,18 +94,23 @@ impl Server {
         fs::write(&pid_file, format!("{}\n", pid))?;
 
         let storage = Arc::new(Mutex::new(Database::new()?));
+        let thread_pool = ThreadPool::new(num_threads);
         let start_time = Instant::now();
         let running = Arc::new(AtomicBool::new(true));
 
         loop {
             match TcpListener::bind(SERVER_ADDR) {
                 Ok(listener) => {
-                    println!("Server listening on {}", SERVER_ADDR);
+                    println!(
+                        "Server listening on {} with {} worker threads",
+                        SERVER_ADDR, num_threads
+                    );
                     return Ok(Self {
                         storage,
                         listener,
                         running,
                         pid_file,
+                        thread_pool,
                     });
                 }
                 Err(e) => {
@@ -146,7 +161,7 @@ impl Server {
             match self.listener.accept() {
                 Ok((stream, _)) => {
                     let storage = Arc::clone(&self.storage);
-                    thread::spawn(move || {
+                    self.thread_pool.execute(move || {
                         if let Err(e) = handle_client(stream, storage) {
                             eprintln!("Error handling client: {}", e);
                         }

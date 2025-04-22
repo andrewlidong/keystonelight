@@ -7,7 +7,7 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 ### Core Functionality
 - In-memory key-value storage with persistent file backup
 - Thread-safe concurrent operations using RwLock
-- Multi-threaded server with configurable worker threads
+- Multi-threaded server with configurable thread pool (specify number of worker threads)
 - TCP-based client-server communication
 - File-based storage with immediate persistence
 - Case-insensitive command handling
@@ -22,7 +22,7 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 
 ### Performance & Safety
 - Thread pool for handling concurrent client connections
-- Cache layer for faster read operations
+- In-memory cache layer for O(1) read operations
 - Atomic file operations for data integrity
 - Proper lock management to prevent deadlocks
 - Automatic log compaction when log size exceeds 1MB
@@ -67,7 +67,11 @@ cargo build
 ### Starting the Server
 
 ```bash
+# Start server with default thread pool (4 threads)
 cargo run --bin database serve
+
+# Start server with custom thread pool size
+cargo run --bin database serve 8  # Uses 8 worker threads
 ```
 
 Expected output:
@@ -93,10 +97,25 @@ To start a fresh server:
    ```bash
    rm -f keystonelight.pid keystonelight.log
    ```
-3. Start the server again:
+3. Start the server again with desired thread count:
    ```bash
-   cargo run --bin database serve
+   cargo run --bin database serve 4  # or any number of threads
    ```
+
+### Performance Tuning
+
+The server's performance can be optimized by adjusting the number of worker threads in the thread pool. Consider the following when choosing the thread count:
+
+- For CPU-bound workloads: Set thread count to the number of CPU cores
+- For I/O-bound workloads: You might benefit from more threads than CPU cores
+- For mixed workloads: Start with thread count = CPU cores + 1
+- For high-concurrency scenarios: Monitor system resources and adjust accordingly
+
+The optimal thread count depends on:
+- Your hardware (CPU cores, memory)
+- Workload characteristics (read/write ratio, operation size)
+- Concurrent client connections
+- System resources availability
 
 ### Client Operations
 
@@ -149,7 +168,9 @@ OK
 
 ### Server
 - Multi-threaded TCP server
-- Thread pool for handling connections
+- Configurable thread pool for connection handling
+- Dynamic worker thread allocation
+- Connection queuing and load balancing
 - In-memory storage with file persistence
 - Log-based storage system
 - Automatic compaction
@@ -167,3 +188,28 @@ OK
 - Atomic operations
 - Automatic compaction
 - File locking for safety
+- Two-tier storage system:
+  - In-memory cache (HashMap) for fast reads
+  - On-disk log file for persistence
+- Cache consistency:
+  - Cache rebuilt from log on startup
+  - Synchronous updates to cache and log
+  - Cache-first reads for optimal performance
+  - Automatic cache cleanup during compaction
+
+### Performance Characteristics
+- Read Operations (GET):
+  - O(1) time complexity using in-memory cache
+  - No disk I/O required for cache hits
+- Write Operations (SET):
+  - O(1) cache update
+  - O(1) log append
+  - Synchronous disk write for durability
+- Delete Operations:
+  - O(1) cache removal
+  - O(1) log append
+  - Synchronous disk write for durability
+- Compaction:
+  - O(n) where n is the number of unique keys
+  - Rebuilds log file from cache state
+  - Automatic when log size exceeds 1MB
