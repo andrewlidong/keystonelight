@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  keystonelight:
+    build: .
+    ports:
+      - "7878:7878"
+    volumes:
+      - keystonelight_data:/var/lib/keystonelight
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "keystonelight-client", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - .:/usr/src/keystonelight
+    environment:
+      - RUST_BACKTRACE=1
+      - RUST_TEST_THREADS=1
+
+volumes:
+  keystonelight_data:

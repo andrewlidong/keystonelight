@@ -12,6 +12,7 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 - File-based storage with immediate persistence
 - Case-insensitive command handling
 - Interactive client with command history and help system
+- Docker support with persistent storage
 
 ### Data Operations
 - `SET <key> <value>`: Store key-value pairs with immediate persistence
@@ -38,6 +39,7 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 - Proper Unix service behavior
 - Stale PID file cleanup on startup
 - File locking to prevent multiple instances
+- Docker containerization with volume support
 
 ### Documentation
 - Comprehensive documentation tests for all public APIs
@@ -55,9 +57,11 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 - Rust (latest stable version)
 - Cargo (comes with Rust)
 - Unix-like environment (Linux/macOS)
+- Docker and Docker Compose (for containerized deployment)
 
 ### Installation
 
+#### Local Installation
 ```bash
 # Clone the repository
 git clone https://github.com/andrewlidong/keystonelight.git
@@ -65,6 +69,16 @@ cd keystonelight
 
 # Build the project
 cargo build
+```
+
+#### Docker Installation
+```bash
+# Clone the repository
+git clone https://github.com/andrewlidong/keystonelight.git
+cd keystonelight
+
+# Build and start the container
+docker-compose up -d
 ```
 
 ### Development Tools
@@ -76,8 +90,9 @@ cargo build
 
 ## Usage
 
-### Starting the Server
+### Local Usage
 
+#### Starting the Server
 ```bash
 # Start server with default thread pool (4 threads)
 cargo run --bin database serve
@@ -86,33 +101,50 @@ cargo run --bin database serve
 cargo run --bin database serve 8  # Uses 8 worker threads
 ```
 
-Expected output:
-```
-Creating new log file at keystonelight.log
-Log file opened and locked successfully
-Replaying log file
-Replay complete, found 0 entries
-Server listening on 127.0.0.1:7878
+#### Client Operations
+```bash
+# Start an interactive client session
+cargo run --bin client
 ```
 
-If the server is already running, you'll see:
-```
-Server error: Server already running with PID <pid>
+### Docker Usage
+
+#### Starting the Service
+```bash
+# Start the containerized service
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Connect to the database using the client
+docker-compose exec keystonelight keystonelight-client
+
+# Stop the service
+docker-compose down
 ```
 
-To start a fresh server:
-1. Kill any existing server processes:
-   ```bash
-   pkill -9 -f "target/debug/database"
-   ```
-2. Clean up any stale files:
-   ```bash
-   rm -f keystonelight.pid keystonelight.log
-   ```
-3. Start the server again with desired thread count:
-   ```bash
-   cargo run --bin database serve 4  # or any number of threads
-   ```
+The Docker version provides:
+- Persistent storage using Docker volumes
+- Automatic container restart
+- Health monitoring
+- Process isolation
+- Port mapping (7878)
+- Non-root user execution
+
+#### Docker Environment Variables
+- `RUST_LOG`: Set logging level (default: info)
+- `THREAD_COUNT`: Number of worker threads (default: 4)
+
+#### Docker Volume
+Data is persisted in the `keystonelight_data` volume. To backup or migrate data:
+```bash
+# Backup volume
+docker run --rm -v keystonelight_keystonelight_data:/source -v $(pwd):/backup alpine tar -czf /backup/keystonelight-backup.tar.gz -C /source .
+
+# Restore volume
+docker run --rm -v keystonelight_keystonelight_data:/target -v $(pwd):/backup alpine sh -c "rm -rf /target/* && tar -xzf /backup/keystonelight-backup.tar.gz -C /target"
+```
 
 ### Performance Tuning
 
@@ -133,7 +165,11 @@ The optimal thread count depends on:
 
 Start an interactive session with the database:
 ```bash
+# Local
 cargo run --bin client
+
+# Docker
+docker-compose exec keystonelight keystonelight-client
 ```
 
 The client provides an interactive prompt with the following features:
@@ -225,3 +261,32 @@ OK
   - O(n) where n is the number of unique keys
   - Rebuilds log file from cache state
   - Automatic when log size exceeds 1MB
+
+## Running Tests
+
+### Local Testing
+To run tests locally:
+
+```bash
+cargo test --all --verbose
+```
+
+### Docker Testing
+To run tests in Docker:
+
+```bash
+# Run all tests
+docker-compose run test
+
+# Run specific test
+docker-compose run test cargo test test_name -- --nocapture
+
+# Run tests with specific features
+docker-compose run test cargo test --features feature_name
+```
+
+The test container includes:
+- All necessary build and test dependencies
+- Source code mounted as a volume for live updates
+- Environment variables for better test output
+- Single-threaded test execution by default

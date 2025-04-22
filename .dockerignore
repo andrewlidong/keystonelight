@@ -1,0 +1,27 @@
+# Git
+.git
+.gitignore
+
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Logs and data
+*.log
+*.pid
+keystonelight.log
+keystonelight.pid
+
+# Tests
+/tests
