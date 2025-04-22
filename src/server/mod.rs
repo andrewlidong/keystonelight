@@ -3,6 +3,50 @@
 //! This module provides a server that handles client connections and processes
 //! commands to manipulate the underlying key-value store. It includes features
 //! like PID file management, signal handling, and graceful shutdown.
+//!
+//! # Examples
+//!
+//! Basic server setup:
+//!
+//! ```no_run
+//! use keystonelight::Server;
+//! use std::fs;
+//!
+//! // Create and start a server with default settings
+//! let server = Server::new().unwrap();
+//!
+//! // The server will:
+//! // - Create a PID file
+//! // - Listen on 127.0.0.1:7878
+//! // - Use 4 worker threads by default
+//! // - Handle client connections concurrently
+//! // - Clean up resources on shutdown
+//!
+//! // Run the server (this blocks until shutdown)
+//! // server.run().unwrap();
+//!
+//! // Clean up
+//! fs::remove_file("keystonelight.pid").unwrap_or(());
+//! fs::remove_file("keystonelight.log").unwrap_or(());
+//! ```
+//!
+//! Custom server configuration:
+//!
+//! ```no_run
+//! use keystonelight::Server;
+//! use std::fs;
+//!
+//! // Create a server with custom paths and thread count
+//! let server = Server::with_paths(
+//!     "custom.pid",
+//!     "custom.log",
+//!     8  // Use 8 worker threads
+//! ).unwrap();
+//!
+//! // Clean up
+//! fs::remove_file("custom.pid").unwrap_or(());
+//! fs::remove_file("custom.log").unwrap_or(());
+//! ```
 
 use crate::storage::Database;
 use crate::thread_pool::ThreadPool;
@@ -30,6 +74,30 @@ const BIND_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const DEFAULT_THREAD_COUNT: usize = 4;
 
 /// A server instance that manages client connections and processes commands.
+///
+/// The server provides:
+/// - Multi-threaded command processing
+/// - Persistent storage with automatic log compaction
+/// - PID file management
+/// - Signal handling (SIGTERM, SIGINT)
+/// - Graceful shutdown
+///
+/// # Examples
+///
+/// ```no_run
+/// use keystonelight::Server;
+/// use std::fs;
+///
+/// // Create a new server
+/// let server = Server::new().unwrap();
+///
+/// // The server is now listening and ready to accept connections
+/// println!("Server started successfully");
+///
+/// // Clean up
+/// fs::remove_file("keystonelight.pid").unwrap_or(());
+/// fs::remove_file("keystonelight.log").unwrap_or(());
+/// ```
 pub struct Server {
     /// The underlying key-value store
     storage: Arc<Mutex<Database>>,
@@ -59,6 +127,26 @@ impl Server {
         Ok(())
     }
 
+    /// Creates a new server with default settings.
+    ///
+    /// This will:
+    /// - Create a PID file at "keystonelight.pid"
+    /// - Create a log file at "keystonelight.log"
+    /// - Use the default number of worker threads (4)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use keystonelight::Server;
+    /// use std::fs;
+    ///
+    /// let server = Server::new().unwrap();
+    /// println!("Server started with default settings");
+    ///
+    /// // Clean up
+    /// fs::remove_file("keystonelight.pid").unwrap_or(());
+    /// fs::remove_file("keystonelight.log").unwrap_or(());
+    /// ```
     pub fn new() -> io::Result<Self> {
         Self::with_paths(
             "keystonelight.pid",
@@ -67,6 +155,33 @@ impl Server {
         )
     }
 
+    /// Creates a new server with custom settings.
+    ///
+    /// # Arguments
+    ///
+    /// * `pid_file` - Path to the PID file
+    /// * `log_file` - Path to the log file
+    /// * `num_threads` - Number of worker threads to use
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use keystonelight::Server;
+    /// use std::fs;
+    ///
+    /// // Create a server with custom settings
+    /// let server = Server::with_paths(
+    ///     "custom.pid",
+    ///     "custom.log",
+    ///     8  // Use 8 worker threads
+    /// ).unwrap();
+    ///
+    /// println!("Server started with custom settings");
+    ///
+    /// // Clean up
+    /// fs::remove_file("custom.pid").unwrap_or(());
+    /// fs::remove_file("custom.log").unwrap_or(());
+    /// ```
     pub fn with_paths<P1: AsRef<Path>, P2: AsRef<Path>>(
         pid_file: P1,
         log_file: P2,
@@ -133,6 +248,26 @@ impl Server {
         }
     }
 
+    /// Runs the server, accepting and handling client connections.
+    ///
+    /// This method blocks until the server is shut down via a signal
+    /// (SIGTERM or SIGINT) or encounters an error.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use keystonelight::Server;
+    /// use std::fs;
+    ///
+    /// let server = Server::new().unwrap();
+    ///
+    /// // Run the server (this will block)
+    /// // server.run().unwrap();
+    ///
+    /// // Clean up
+    /// fs::remove_file("keystonelight.pid").unwrap_or(());
+    /// fs::remove_file("keystonelight.log").unwrap_or(());
+    /// ```
     pub fn run(&self) -> io::Result<()> {
         // Set up signal handlers
         let mut signals = Signals::new(&[libc::SIGTERM, libc::SIGINT])?;

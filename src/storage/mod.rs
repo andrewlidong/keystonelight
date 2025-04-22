@@ -1,3 +1,51 @@
+//! Storage module for the key-value database.
+//!
+//! This module provides persistent storage with an in-memory cache and log-based persistence.
+//!
+//! # Examples
+//!
+//! Basic usage:
+//!
+//! ```
+//! use keystonelight::storage::Database;
+//! use std::fs;
+//!
+//! // Create a new database
+//! let db = Database::new().unwrap();
+//!
+//! // Set a key-value pair
+//! db.set("key1", b"value1").unwrap();
+//!
+//! // Get the value
+//! assert_eq!(db.get("key1").unwrap(), b"value1");
+//!
+//! // Delete the key
+//! db.delete("key1").unwrap();
+//! assert!(db.get("key1").is_none());
+//!
+//! // Clean up
+//! fs::remove_file("keystonelight.log").unwrap_or(());
+//! ```
+//!
+//! Binary data handling:
+//!
+//! ```
+//! use keystonelight::storage::Database;
+//! use std::fs;
+//!
+//! let db = Database::new().unwrap();
+//!
+//! // Store binary data
+//! let binary_data = vec![0, 1, 2, 3];
+//! db.set("binary_key", &binary_data).unwrap();
+//!
+//! // Retrieve binary data
+//! assert_eq!(db.get("binary_key").unwrap(), binary_data);
+//!
+//! // Clean up
+//! fs::remove_file("keystonelight.log").unwrap_or(());
+//! ```
+
 use crate::storage::log::{LogEntry, LogFile};
 use std::collections::HashMap;
 use std::io;
@@ -10,16 +58,82 @@ use std::sync::{Arc, Mutex, RwLock};
 
 mod log;
 
+/// A persistent key-value database with in-memory cache and log-based storage.
+///
+/// The database maintains an in-memory cache for fast access and a log file for persistence.
+/// All operations are thread-safe and can be used concurrently.
+///
+/// # Examples
+///
+/// ```
+/// use keystonelight::storage::Database;
+/// use std::fs;
+///
+/// // Create a new database with default log file
+/// let db = Database::new().unwrap();
+///
+/// // Basic operations
+/// db.set("key1", b"value1").unwrap();
+/// assert_eq!(db.get("key1").unwrap(), b"value1");
+///
+/// // Clean up
+/// fs::remove_file("keystonelight.log").unwrap_or(());
+/// ```
+///
+/// Using a custom log file path:
+///
+/// ```
+/// use keystonelight::storage::Database;
+/// use std::fs;
+///
+/// // Create a database with custom log file
+/// let db = Database::with_log_path("custom.log").unwrap();
+///
+/// // Operations are persisted to the custom log file
+/// db.set("key1", b"value1").unwrap();
+/// assert_eq!(db.get("key1").unwrap(), b"value1");
+///
+/// // Clean up
+/// fs::remove_file("custom.log").unwrap_or(());
+/// ```
 pub struct Database {
     log: Arc<Mutex<LogFile>>,
     cache: Arc<RwLock<HashMap<String, Vec<u8>>>>,
 }
 
 impl Database {
+    /// Creates a new database with the default log file path.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use keystonelight::storage::Database;
+    /// use std::fs;
+    ///
+    /// let db = Database::new().unwrap();
+    /// db.set("test_key", b"test_value").unwrap();
+    ///
+    /// // Clean up
+    /// fs::remove_file("keystonelight.log").unwrap_or(());
+    /// ```
     pub fn new() -> io::Result<Self> {
         Self::with_log_path("keystonelight.log")
     }
 
+    /// Creates a new database with a custom log file path.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use keystonelight::storage::Database;
+    /// use std::fs;
+    ///
+    /// let db = Database::with_log_path("custom.log").unwrap();
+    /// db.set("test_key", b"test_value").unwrap();
+    ///
+    /// // Clean up
+    /// fs::remove_file("custom.log").unwrap_or(());
+    /// ```
     pub fn with_log_path<P: AsRef<Path>>(log_path: P) -> io::Result<Self> {
         let mut log = LogFile::with_path(log_path)?;
         let cache = Arc::new(RwLock::new(HashMap::new()));
@@ -78,10 +192,51 @@ impl Database {
     }
     */
 
+    /// Retrieves a value from the database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use keystonelight::storage::Database;
+    /// use std::fs;
+    ///
+    /// let db = Database::new().unwrap();
+    ///
+    /// // Get non-existent key
+    /// assert!(db.get("missing").is_none());
+    ///
+    /// // Get existing key
+    /// db.set("key1", b"value1").unwrap();
+    /// assert_eq!(db.get("key1").unwrap(), b"value1");
+    ///
+    /// // Clean up
+    /// fs::remove_file("keystonelight.log").unwrap_or(());
+    /// ```
     pub fn get(&self, key: &str) -> Option<Vec<u8>> {
         self.cache.read().unwrap().get(key).cloned()
     }
 
+    /// Sets a key-value pair in the database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use keystonelight::storage::Database;
+    /// use std::fs;
+    ///
+    /// let db = Database::new().unwrap();
+    ///
+    /// // Set and verify a value
+    /// db.set("key1", b"value1").unwrap();
+    /// assert_eq!(db.get("key1").unwrap(), b"value1");
+    ///
+    /// // Update existing value
+    /// db.set("key1", b"new_value").unwrap();
+    /// assert_eq!(db.get("key1").unwrap(), b"new_value");
+    ///
+    /// // Clean up
+    /// fs::remove_file("keystonelight.log").unwrap_or(());
+    /// ```
     pub fn set(&self, key: &str, value: &[u8]) -> io::Result<()> {
         let mut cache = self.cache.write().unwrap();
         let value = value.to_vec();
@@ -91,6 +246,27 @@ impl Database {
         Ok(())
     }
 
+    /// Deletes a key-value pair from the database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use keystonelight::storage::Database;
+    /// use std::fs;
+    ///
+    /// let db = Database::new().unwrap();
+    ///
+    /// // Delete non-existent key
+    /// db.delete("missing").unwrap();
+    ///
+    /// // Delete existing key
+    /// db.set("key1", b"value1").unwrap();
+    /// db.delete("key1").unwrap();
+    /// assert!(db.get("key1").is_none());
+    ///
+    /// // Clean up
+    /// fs::remove_file("keystonelight.log").unwrap_or(());
+    /// ```
     pub fn delete(&self, key: &str) -> io::Result<()> {
         let mut cache = self.cache.write().unwrap();
         if cache.remove(key).is_some() {
@@ -100,6 +276,31 @@ impl Database {
         Ok(())
     }
 
+    /// Compacts the log file by removing redundant entries.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use keystonelight::storage::Database;
+    /// use std::fs;
+    ///
+    /// let db = Database::new().unwrap();
+    ///
+    /// // Create some data
+    /// db.set("key1", b"value1").unwrap();
+    /// db.set("key2", b"value2").unwrap();
+    /// db.delete("key1").unwrap();
+    ///
+    /// // Compact the log
+    /// db.compact().unwrap();
+    ///
+    /// // Verify data is still intact
+    /// assert!(db.get("key1").is_none());
+    /// assert_eq!(db.get("key2").unwrap(), b"value2");
+    ///
+    /// // Clean up
+    /// fs::remove_file("keystonelight.log").unwrap_or(());
+    /// ```
     pub fn compact(&self) -> io::Result<()> {
         let mut log = self.log.lock().unwrap();
         log.compact()?;
