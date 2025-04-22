@@ -5,8 +5,9 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::sync::{Arc, Mutex, RwLock};
 
-const CACHE_PATH: &str = "cache.txt";
-const DATA_PATH: &str = "data.txt";
+// Currently unused file paths
+// const CACHE_PATH: &str = "cache.txt";
+// const DATA_PATH: &str = "data.txt";
 
 mod log;
 
@@ -46,34 +47,33 @@ impl Database {
         })
     }
 
+    // Currently unused file operations
+    /*
     pub fn load_from_file(&self) -> io::Result<()> {
-        if let Ok(file) = File::open(DATA_PATH) {
-            let reader = BufReader::new(file);
-            let mut data = self.cache.write().unwrap();
+        let mut storage = self.storage.write().unwrap();
+        let file = File::open(DATA_PATH)?;
+        let reader = BufReader::new(file);
 
-            for line in reader.lines().map_while(Result::ok) {
-                if let Some((k, v)) = line.split_once('|') {
-                    data.insert(k.to_string(), v.as_bytes().to_vec());
-                }
+        for line in reader.lines() {
+            let line = line?;
+            let parts: Vec<&str> = line.splitn(2, ' ').collect();
+            if parts.len() == 2 {
+                storage.insert(parts[0].to_string(), parts[1].as_bytes().to_vec());
             }
         }
         Ok(())
     }
 
     pub fn save_to_file(&self) -> io::Result<()> {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(DATA_PATH)?;
+        let storage = self.storage.read().unwrap();
+        let mut file = File::create(DATA_PATH)?;
 
-        let data = self.cache.read().unwrap();
-        for (k, v) in data.iter() {
-            writeln!(file, "{}|{}", k, String::from_utf8(v.clone()).unwrap())?;
+        for (key, value) in storage.iter() {
+            writeln!(file, "{} {}", key, String::from_utf8_lossy(value))?;
         }
         Ok(())
     }
+    */
 
     pub fn get(&self, key: &str) -> Option<Vec<u8>> {
         self.cache.read().unwrap().get(key).cloned()

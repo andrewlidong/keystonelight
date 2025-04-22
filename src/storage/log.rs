@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Seek, Write};
 use std::os::unix::fs::OpenOptionsExt;
+use std::sync::Arc;
 
 const LOG_FILE: &str = "keystonelight.log";
 const TEMP_LOG_FILE: &str = "keystonelight.log.tmp";
@@ -124,7 +125,6 @@ impl LogFile {
         println!("Replaying log file");
         let mut entries = Vec::new();
         // Seek to the beginning of the file
-        use std::io::Seek;
         self.file.seek(std::io::SeekFrom::Start(0))?;
 
         let reader = BufReader::new(&self.file);

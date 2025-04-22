@@ -33,12 +33,6 @@ impl fmt::Display for Command {
     }
 }
 
-#[derive(Debug)]
-pub enum Response {
-    Ok(Option<String>),
-    Error(String),
-}
-
 /// Parse a command from a string.
 ///
 /// # Arguments
@@ -68,39 +62,6 @@ pub fn parse_command(line: &str) -> Option<Command> {
         }
         "COMPACT" => Some(Command::Compact),
         _ => None,
-    }
-}
-
-impl Response {
-    pub fn send(&self, writer: &mut impl Write) -> io::Result<()> {
-        match self {
-            Response::Ok(value) => {
-                if let Some(v) = value {
-                    writeln!(writer, "OK {}", v)
-                } else {
-                    writeln!(writer, "OK")
-                }
-            }
-            Response::Error(msg) => writeln!(writer, "ERROR {}", msg),
-        }
-    }
-
-    pub fn receive(stream: &mut TcpStream) -> io::Result<Self> {
-        let mut reader = io::BufReader::new(stream);
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
-
-        let line = line.trim();
-        if line.starts_with("OK ") {
-            let value = line[3..].to_string();
-            Ok(Response::Ok(Some(value)))
-        } else if line == "OK" {
-            Ok(Response::Ok(None))
-        } else if line.starts_with("ERROR ") {
-            Ok(Response::Error(line[6..].to_string()))
-        } else {
-            Ok(Response::Error("Invalid response format".to_string()))
-        }
     }
 }
 
