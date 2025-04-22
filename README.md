@@ -1,6 +1,8 @@
 # KeystoneLight
+## _Smooth, Never Bitter_
 
 A lightweight, concurrent key-value database written in Rust, featuring in-memory storage with file persistence and proper Unix service behavior.
+
 
 ## Features
 
@@ -291,4 +293,3 @@ The test container includes:
 - Environment variables for better test output
 - Single-threaded test execution by default
 
-# Smooth, Never Bitter
