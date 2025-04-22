@@ -1,4 +1,4 @@
-# KeystoneLight Database
+# KeystoneLight
 
 A lightweight, concurrent key-value database written in Rust, featuring in-memory storage with file persistence and proper Unix service behavior.
 
@@ -47,6 +47,7 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 - Thread pool configuration and management examples
 - Client-server interaction examples
 - Binary data handling examples
+- [Technical Blog Post](BLOG.md) - A detailed walkthrough of the project's implementation and design decisions
 
 ## Development Setup
 
