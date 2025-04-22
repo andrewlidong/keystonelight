@@ -22,6 +22,7 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 
 ### Performance & Safety
 - Thread pool for handling concurrent client connections
+- Graceful thread pool shutdown on server termination
 - In-memory cache layer for O(1) read operations
 - Atomic file operations for data integrity
 - Proper lock management to prevent deadlocks
@@ -37,6 +38,15 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 - Proper Unix service behavior
 - Stale PID file cleanup on startup
 - File locking to prevent multiple instances
+
+### Documentation
+- Comprehensive documentation tests for all public APIs
+- Inline code examples in documentation
+- Detailed module and function documentation
+- Usage examples for all major components
+- Thread pool configuration and management examples
+- Client-server interaction examples
+- Binary data handling examples
 
 ## Development Setup
 
@@ -61,6 +71,7 @@ cargo build
 - `cargo fmt`: Format code according to Rust style guidelines
 - `cargo clippy`: Additional linting checks
 - `cargo test`: Run all tests including integration tests
+- `cargo test --doc`: Run documentation tests to verify code examples
 
 ## Usage
 
