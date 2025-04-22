@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Seek, Write};
 use std::os::unix::fs::OpenOptionsExt;
-use std::sync::Arc;
 
 const LOG_FILE: &str = "keystonelight.log";
 const TEMP_LOG_FILE: &str = "keystonelight.log.tmp";

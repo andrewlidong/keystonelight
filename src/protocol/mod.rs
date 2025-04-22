@@ -3,6 +3,7 @@
 //! This module defines the command protocol used between clients and the server.
 
 use std::fmt;
+use std::io;
 use std::io::{self, BufRead, Write};
 use std::net::TcpStream;
 
@@ -72,27 +73,27 @@ mod tests {
     #[test]
     fn test_command_parsing() {
         // Test get command
-        let cmd = Command::parse("get test_key").unwrap();
+        let cmd = parse_command("get test_key").unwrap();
         assert!(matches!(cmd, Command::Get(key) if key == "test_key"));
 
         // Test set command
-        let cmd = Command::parse("set test_key test value").unwrap();
+        let cmd = parse_command("set test_key test_value").unwrap();
         assert!(matches!(cmd, Command::Set(key, value)
-            if key == "test_key" && value == "test value"));
+            if key == "test_key" && value == b"test_value"));
 
         // Test delete command
-        let cmd = Command::parse("delete test_key").unwrap();
+        let cmd = parse_command("delete test_key").unwrap();
         assert!(matches!(cmd, Command::Delete(key) if key == "test_key"));
 
         // Test compact command
-        let cmd = Command::parse("compact").unwrap();
+        let cmd = parse_command("compact").unwrap();
         assert!(matches!(cmd, Command::Compact));
 
         // Test invalid commands
-        assert!(Command::parse("").is_err());
-        assert!(Command::parse("get").is_err());
-        assert!(Command::parse("set key").is_err());
-        assert!(Command::parse("delete").is_err());
-        assert!(Command::parse("unknown").is_err());
+        assert!(parse_command("").is_none());
+        assert!(parse_command("get").is_none());
+        assert!(parse_command("set key").is_none());
+        assert!(parse_command("delete").is_none());
+        assert!(parse_command("unknown").is_none());
     }
 }

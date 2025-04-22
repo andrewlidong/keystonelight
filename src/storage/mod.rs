@@ -1,8 +1,6 @@
 use crate::storage::log::{LogEntry, LogFile};
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Write};
-use std::os::unix::fs::OpenOptionsExt;
+use std::io;
 use std::sync::{Arc, Mutex, RwLock};
 
 // Currently unused file paths
