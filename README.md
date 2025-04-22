@@ -11,12 +11,14 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 - TCP-based client-server communication
 - File-based storage with immediate persistence
 - Case-insensitive command handling
+- Interactive client with command history and help system
 
 ### Data Operations
-- `get`: Retrieve values with cache-first lookup
-- `set`: Store key-value pairs with immediate persistence
-- `delete`: Remove entries with atomic operations
-- `compact`: Trigger log compaction to optimize storage
+- `SET <key> <value>`: Store key-value pairs with immediate persistence
+- `GET <key>`: Retrieve values with cache-first lookup
+- `DELETE <key>`: Remove entries with atomic operations
+- `COMPACT`: Trigger log compaction to optimize storage
+- Support for binary data (automatically base64 encoded/decoded)
 
 ### Performance & Safety
 - Thread pool for handling concurrent client connections
@@ -25,6 +27,7 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 - Proper lock management to prevent deadlocks
 - Automatic log compaction when log size exceeds 1MB
 - Base64 encoding for binary data support
+- Comprehensive error handling and recovery
 
 ### System Features
 - Process ID tracking for external management
@@ -57,6 +60,7 @@ cargo build
 - `cargo fix`: Auto-fix common code issues
 - `cargo fmt`: Format code according to Rust style guidelines
 - `cargo clippy`: Additional linting checks
+- `cargo test`: Run all tests including integration tests
 
 ## Usage
 
@@ -101,10 +105,15 @@ Start an interactive session with the database:
 cargo run --bin client
 ```
 
+The client provides an interactive prompt with the following features:
+- Command history (up/down arrows)
+- Help system (type 'help' for usage)
+- Binary data support (automatically handled)
+- Clear error messages
+- Command completion
+
 Example session:
 ```
-Connected to database server at 127.0.0.1:7878
-Enter commands (type 'help' for usage, 'quit' to exit):
 > help
 Available commands:
   SET <key> <value>  - Set a key-value pair
@@ -113,95 +122,48 @@ Available commands:
   COMPACT           - Trigger log compaction
   quit/exit         - Exit the client
 
-> set andrew dong
+> SET test_key test_value
 OK
-> get andrew
-dong
-> delete andrew
+> GET test_key
+test_value
+> DELETE test_key
 OK
-> get andrew
-NOT_FOUND
-> compact
+> COMPACT
 OK
-> quit
+> exit
 Goodbye!
 ```
 
-### Command Examples
+### Binary Data Support
 
-Commands are case-insensitive:
+The database supports storing binary data. When using the client, binary data is automatically base64 encoded/decoded:
+
 ```bash
-SET key value
-set key value
-SeT key value
+> SET binary_key \x00\x01\x02\x03
+OK
+> GET binary_key
+\x00\x01\x02\x03
 ```
-
-Values with spaces:
-```bash
-SET key "value with spaces"
-SET key value\swith\sspaces
-```
-
-Binary data (automatically base64 encoded):
-```bash
-SET binary_key <binary_data>
-```
-
-### Signal Handling
-
-The server handles the following signals:
-- SIGTERM: Graceful shutdown
-- SIGINT: Graceful shutdown (Ctrl+C)
-
-On receiving these signals, the server will:
-1. Stop accepting new connections
-2. Complete any in-progress operations
-3. Clean up resources (PID file, log file locks)
-4. Exit gracefully
-
-### Log Compaction
-
-The server automatically triggers log compaction when:
-- The log file size exceeds 1MB
-- The `compact` command is issued
-
-Compaction:
-1. Creates a new log file
-2. Replays all valid operations
-3. Removes deleted keys and overwritten values
-4. Swaps the new log file with the old one
-5. Releases the old log file
 
 ## Architecture
 
 ### Server
 - Multi-threaded TCP server
-- Thread pool for handling client connections
-- Signal handling for graceful shutdown
-- PID file management
-- File locking for single instance
-
-### Storage
-- In-memory cache with RwLock
-- Write-ahead logging for persistence
-- Automatic log compaction
-- Base64 encoding for binary data
+- Thread pool for handling connections
+- In-memory storage with file persistence
+- Log-based storage system
+- Automatic compaction
 
 ### Client
 - Interactive command-line interface
-- Case-insensitive command parsing
-- Support for spaces in values
-- Binary data handling
+- TCP-based communication
+- Binary data support
+- Error handling and recovery
+- Command history and help system
 
-## Error Handling
-
-The server implements comprehensive error handling:
-- Connection errors
-- File system errors
-- Lock acquisition failures
-- Invalid command parsing
-- Resource cleanup on errors
-
-## License
-
-MIT License - See LICENSE file for details
+### Storage
+- Log-structured storage
+- Immediate persistence
+- Atomic operations
+- Automatic compaction
+- File locking for safety
