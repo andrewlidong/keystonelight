@@ -1,10 +1,6 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use nix::sys::signal::Signal;
-use nix::unistd::Pid;
-use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::net::TcpStream;
-use std::process;
 
 const SERVER_ADDR: &str = "127.0.0.1:7878";
 const PID_FILE: &str = "keystonelight.pid";
