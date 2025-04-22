@@ -138,13 +138,13 @@ The Docker version provides:
 
 #### Docker Volume
 Data is persisted in the `keystonelight_data` volume. To backup or migrate data:
-```bash
+   ```bash
 # Backup volume
 docker run --rm -v keystonelight_keystonelight_data:/source -v $(pwd):/backup alpine tar -czf /backup/keystonelight-backup.tar.gz -C /source .
 
 # Restore volume
 docker run --rm -v keystonelight_keystonelight_data:/target -v $(pwd):/backup alpine sh -c "rm -rf /target/* && tar -xzf /backup/keystonelight-backup.tar.gz -C /target"
-```
+   ```
 
 ### Performance Tuning
 
@@ -290,3 +290,5 @@ The test container includes:
 - Source code mounted as a volume for live updates
 - Environment variables for better test output
 - Single-threaded test execution by default
+
+# Smooth, Never Bitter
