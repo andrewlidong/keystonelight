@@ -2,7 +2,7 @@
 //!
 //! This module provides both a programmatic client interface and an interactive mode.
 
-use crate::protocol::{parse_command, Command};
+use crate::protocol::parse_command;
 use std::io::{self, Write};
 use std::net::TcpStream;
 

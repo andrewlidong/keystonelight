@@ -4,15 +4,12 @@
 //! commands to manipulate the underlying key-value store. It includes features
 //! like PID file management, signal handling, and graceful shutdown.
 
-use crate::{
-    protocol::{parse_command, Command},
-    storage::Database,
-};
+use crate::storage::Database;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use libc;
 use signal_hook::iterator::Signals;
 use std::fs;
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -196,19 +193,19 @@ fn handle_client(mut stream: TcpStream, storage: Arc<Mutex<Database>>) -> io::Re
             }
         }
         (Some("SET"), Some(key), Some(value)) => {
-            let mut storage = storage.lock().unwrap();
+            let storage = storage.lock().unwrap();
             storage.set(&key, &value)?;
             "OK".to_string()
         }
         (Some("DELETE"), Some(key), None) => {
             println!("Processing DELETE command for key: {}", key);
-            let mut storage = storage.lock().unwrap();
+            let storage = storage.lock().unwrap();
             storage.delete(&key)?;
             println!("Successfully deleted key: {}", key);
             "OK".to_string()
         }
         (Some("COMPACT"), None, None) => {
-            let mut storage = storage.lock().unwrap();
+            let storage = storage.lock().unwrap();
             storage.compact()?;
             "OK".to_string()
         }

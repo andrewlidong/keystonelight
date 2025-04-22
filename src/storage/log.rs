@@ -2,9 +2,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use fs2::FileExt;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
+use std::io::{self, BufRead, BufReader, Seek, Write};
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
 
 const LOG_FILE: &str = "keystonelight.log";
 const TEMP_LOG_FILE: &str = "keystonelight.log.tmp";
