@@ -16,13 +16,14 @@ path = "src/lib.rs"
 
 [dependencies]
 fs2 = "0.4.3"
-signal-hook = "0.3"
+signal-hook = "0.3.17"
 nix = { version = "0.27.1", features = ["process", "signal"] }
 lazy_static = "1.4"
 ctrlc = "3.4"
 flock = "0.2.0"
-libc = "0.2"
+libc = "0.2.153"
 base64 = "0.21.7"
+uuid = { version = "1.7.0", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3.10.1"

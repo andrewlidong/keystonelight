@@ -4,8 +4,6 @@
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use std::fmt;
-use std::io::{self, BufRead, Write};
-use std::net::TcpStream;
 
 /// Commands that can be sent from the client to the server.
 #[derive(Debug)]

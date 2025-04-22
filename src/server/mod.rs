@@ -4,7 +4,6 @@
 //! commands to manipulate the underlying key-value store. It includes features
 //! like PID file management, signal handling, and graceful shutdown.
 
-use crate::protocol::{Command, Response};
 use crate::storage::Database;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use libc;
@@ -37,8 +36,6 @@ pub struct Server {
     running: Arc<AtomicBool>,
     /// Path to the PID file
     pid_file: PathBuf,
-    /// Path to the log file
-    log_file: PathBuf,
 }
 
 impl Server {
@@ -63,10 +60,9 @@ impl Server {
 
     pub fn with_paths<P1: AsRef<Path>, P2: AsRef<Path>>(
         pid_file: P1,
-        log_file: P2,
+        _log_file: P2,
     ) -> io::Result<Self> {
         let pid_file = pid_file.as_ref().to_path_buf();
-        let log_file = log_file.as_ref().to_path_buf();
 
         // Clean up any stale PID file
         Self::cleanup_stale_pid_file(&pid_file)?;
@@ -87,7 +83,7 @@ impl Server {
         let pid = process::id();
         fs::write(&pid_file, format!("{}\n", pid))?;
 
-        let storage = Arc::new(Mutex::new(Database::with_log_path(&log_file)?));
+        let storage = Arc::new(Mutex::new(Database::new()?));
         let start_time = Instant::now();
         let running = Arc::new(AtomicBool::new(true));
 
@@ -100,7 +96,6 @@ impl Server {
                         listener,
                         running,
                         pid_file,
-                        log_file,
                     });
                 }
                 Err(e) => {
@@ -187,62 +182,77 @@ fn process_exists(pid: u32) -> bool {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None).is_ok()
 }
 
-fn handle_client(mut stream: TcpStream, storage: Arc<Mutex<Database>>) -> io::Result<()> {
+fn handle_client(stream: TcpStream, storage: Arc<Mutex<Database>>) -> io::Result<()> {
     // Set non-blocking mode for the stream
     stream.set_nonblocking(false)?;
 
-    let mut reader = BufReader::new(&stream);
+    let mut writer = stream.try_clone()?;
+    let mut reader = BufReader::new(stream);
     let mut line = String::new();
-    reader.read_line(&mut line)?;
-    let command = line.trim();
-    println!("Received raw command: '{}'", command);
 
-    let response = match crate::protocol::parse_command(command) {
-        Some(cmd) => {
-            println!("Command parts: {:?}", cmd);
-            match cmd {
-                crate::protocol::Command::Get(key) => {
-                    let storage = storage.lock().unwrap();
-                    match storage.get(&key) {
-                        Some(value) => {
-                            // Check if the value contains any non-printable characters
-                            let is_binary = value
-                                .iter()
-                                .any(|&b| !b.is_ascii_graphic() && !b.is_ascii_whitespace());
-                            if is_binary {
-                                format!("OK base64:{}", BASE64.encode(&value))
-                            } else {
-                                match String::from_utf8(value.clone()) {
-                                    Ok(text) => format!("OK {}", text),
-                                    Err(_) => format!("OK base64:{}", BASE64.encode(&value)),
+    while reader.read_line(&mut line)? > 0 {
+        let command = line.trim();
+        println!("Received raw command: '{}'", command);
+
+        let response = match crate::protocol::parse_command(command) {
+            Some(cmd) => {
+                println!("Command parts: {:?}", cmd);
+                match cmd {
+                    crate::protocol::Command::Get(key) => {
+                        let storage = storage.lock().unwrap();
+                        match storage.get(&key) {
+                            Some(value) => {
+                                // Check if the value contains any non-printable characters
+                                let is_binary = value
+                                    .iter()
+                                    .any(|&b| !b.is_ascii_graphic() && !b.is_ascii_whitespace());
+                                if is_binary {
+                                    format!("VALUE base64:{}\n", BASE64.encode(&value))
+                                } else {
+                                    match String::from_utf8(value.clone()) {
+                                        Ok(text) => format!("VALUE {}\n", text),
+                                        Err(_) => {
+                                            format!("VALUE base64:{}\n", BASE64.encode(&value))
+                                        }
+                                    }
                                 }
                             }
+                            None => "NOT_FOUND\n".to_string(),
                         }
-                        None => "NOT_FOUND".to_string(),
+                    }
+                    crate::protocol::Command::Set(key, value) => {
+                        let mut storage = storage.lock().unwrap();
+                        if let Err(e) = storage.set(&key, &value) {
+                            format!("ERROR {}\n", e)
+                        } else {
+                            "OK\n".to_string()
+                        }
+                    }
+                    crate::protocol::Command::Delete(key) => {
+                        let mut storage = storage.lock().unwrap();
+                        if let Err(e) = storage.delete(&key) {
+                            format!("ERROR {}\n", e)
+                        } else {
+                            "OK\n".to_string()
+                        }
+                    }
+                    crate::protocol::Command::Compact => {
+                        let mut storage = storage.lock().unwrap();
+                        if let Err(e) = storage.compact() {
+                            format!("ERROR {}\n", e)
+                        } else {
+                            "OK\n".to_string()
+                        }
                     }
                 }
-                crate::protocol::Command::Set(key, value) => {
-                    let mut storage = storage.lock().unwrap();
-                    storage.set(&key, &value)?;
-                    "OK".to_string()
-                }
-                crate::protocol::Command::Delete(key) => {
-                    let mut storage = storage.lock().unwrap();
-                    storage.delete(&key)?;
-                    "OK".to_string()
-                }
-                crate::protocol::Command::Compact => {
-                    let mut storage = storage.lock().unwrap();
-                    storage.compact()?;
-                    "OK".to_string()
-                }
             }
-        }
-        None => "ERROR Invalid command".to_string(),
-    };
+            None => "ERROR Invalid command\n".to_string(),
+        };
 
-    println!("Sending response: {}", response);
-    writeln!(stream, "{}", response)?;
-    stream.flush()?;
+        writer.write_all(response.as_bytes())?;
+        writer.flush()?;
+        line.clear();
+    }
+
     Ok(())
 }

@@ -6,8 +6,6 @@ use std::io::{self, BufRead, BufReader, Seek, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-const DEFAULT_LOG_FILE: &str = "keystonelight.log";
-const TEMP_LOG_FILE: &str = "keystonelight.log.tmp";
 const MAX_LOG_SIZE: usize = 1024 * 1024; // 1MB
 
 #[derive(Debug, Clone)]
@@ -74,10 +72,6 @@ pub struct LogFile {
 }
 
 impl LogFile {
-    pub fn new() -> io::Result<Self> {
-        Self::with_path(DEFAULT_LOG_FILE)
-    }
-
     pub fn with_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         println!("Creating new log file at {}", path.display());
@@ -193,7 +187,7 @@ impl LogFile {
         temp_file.sync_all()?;
 
         // Release the lock on the old file
-        self.file.unlock()?;
+        fs2::FileExt::unlock(&self.file)?;
 
         // Close both files
         drop(temp_file);
@@ -220,6 +214,11 @@ impl LogFile {
         self.file.try_lock_exclusive()?;
 
         Ok(())
+    }
+
+    pub fn unlock(&self) -> io::Result<()> {
+        // Use fully qualified syntax to avoid naming conflicts
+        fs2::FileExt::unlock(&self.file)
     }
 }
 

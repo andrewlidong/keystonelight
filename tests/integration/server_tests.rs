@@ -8,12 +8,16 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;
+use uuid::Uuid;
 
 fn cleanup(pid_file: &str, log_file: &str) {
     // Kill any running server processes
     let _ = std::process::Command::new("pkill")
         .args(["-9", "-f", "target/debug/database"])
         .output();
+
+    // Give processes time to fully terminate
+    thread::sleep(Duration::from_millis(500));
 
     // Clean up any existing files
     for file in &[pid_file, log_file] {
@@ -28,8 +32,9 @@ fn cleanup(pid_file: &str, log_file: &str) {
             }
         }
     }
+
     // Final sleep to ensure resources are released
-    thread::sleep(Duration::from_millis(500));
+    thread::sleep(Duration::from_millis(1000));
 }
 
 fn connect_client() -> std::io::Result<TcpStream> {
@@ -71,20 +76,25 @@ fn send_command(command: &str) -> std::io::Result<String> {
 }
 
 fn decode_response(response: &str) -> Option<String> {
-    if response.starts_with("OK base64:") {
-        let encoded = &response["OK base64:".len()..];
+    if response.starts_with("VALUE base64:") {
+        let encoded = &response["VALUE base64:".len()..];
         let decoded = BASE64.decode(encoded).ok()?;
         String::from_utf8(decoded).ok()
-    } else if response.starts_with("OK ") {
-        Some(response["OK ".len()..].to_string())
+    } else if response.starts_with("VALUE ") {
+        Some(response["VALUE ".len()..].to_string())
     } else {
         Some(response.to_string())
     }
 }
 
 fn start_server(temp_dir: &tempfile::TempDir) -> Arc<AtomicBool> {
-    let pid_file = temp_dir.path().join("keystonelight.pid");
-    let log_file = temp_dir.path().join("keystonelight.log");
+    let test_id = Uuid::new_v4();
+    let pid_file = temp_dir
+        .path()
+        .join(format!("keystonelight-{}.pid", test_id));
+    let log_file = temp_dir
+        .path()
+        .join(format!("keystonelight-{}.log", test_id));
 
     cleanup(pid_file.to_str().unwrap(), log_file.to_str().unwrap());
 
@@ -102,7 +112,7 @@ fn start_server(temp_dir: &tempfile::TempDir) -> Arc<AtomicBool> {
     });
 
     // Give the server time to start
-    thread::sleep(Duration::from_millis(500));
+    thread::sleep(Duration::from_millis(1000));
     running
 }
 
@@ -117,6 +127,7 @@ fn test_server_basic_operations() {
 
     // Test GET operation
     let response = send_command("get test_key").unwrap();
+    assert!(response.starts_with("VALUE "));
     let value = decode_response(&response).unwrap();
     assert_eq!(value, "test_value");
 
@@ -151,6 +162,7 @@ fn test_server_concurrent_clients() {
 
             // Get value back
             let response = send_command(&format!("get {}", key)).unwrap();
+            assert!(response.starts_with("VALUE "));
             let value_back = decode_response(&response).unwrap();
             assert_eq!(value_back, value);
         });
@@ -201,8 +213,11 @@ fn test_server_binary_data() {
     .unwrap();
     assert_eq!(response, "OK");
 
+    // Get binary data back
     let response = send_command("get binary_key").unwrap();
-    assert!(response.starts_with("OK base64:"));
+    assert!(response.starts_with("VALUE base64:"));
+    let value = decode_response(&response).unwrap();
+    assert_eq!(value.as_bytes(), binary_data);
 
     // Clean up
     running.store(false, Ordering::SeqCst);

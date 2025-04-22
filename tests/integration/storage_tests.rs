@@ -24,7 +24,7 @@ fn test_persistence() {
     let log_file = temp_dir.path().join("keystonelight.log");
     cleanup(log_file.to_str().unwrap());
 
-    let mut db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
+    let db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
     db.set("key1", b"value1").unwrap();
     db.set("key2", b"value2").unwrap();
     wait_for_file_sync();
@@ -42,7 +42,7 @@ fn test_compaction() {
     let log_file = temp_dir.path().join("keystonelight.log");
     cleanup(log_file.to_str().unwrap());
 
-    let mut db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
+    let db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
 
     // Write multiple versions of the same key
     for i in 0..100 {
@@ -83,7 +83,7 @@ fn test_delete() {
     let log_file = temp_dir.path().join("keystonelight.log");
     cleanup(log_file.to_str().unwrap());
 
-    let mut db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
+    let db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
 
     // Set and verify key
     db.set("key1", b"value1").unwrap();
@@ -107,7 +107,7 @@ fn test_concurrent_operations() {
     let log_file = temp_dir.path().join("keystonelight.log");
     cleanup(log_file.to_str().unwrap());
 
-    let mut db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
+    let db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
 
     // Perform multiple operations in quick succession
     for i in 0..100 {
@@ -132,7 +132,7 @@ fn test_large_values() {
     let log_file = temp_dir.path().join("keystonelight.log");
     cleanup(log_file.to_str().unwrap());
 
-    let mut db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
+    let db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
 
     // Create a large value
     let large_value = "x".repeat(1024 * 1024); // 1MB string
