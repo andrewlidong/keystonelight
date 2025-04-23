@@ -136,6 +136,27 @@ graph TD
 
 ---
 
+# Testing Strategy
+
+```mermaid
+graph TD
+    Unit[Unit Tests] -->|Verify| Core[Core Functionality]
+    Integration[Integration Tests] -->|Test| System[System Behavior]
+    Stress[Stress Tests] -->|Validate| Concurrency[Concurrent Operations]
+```
+
+- **Multi-Layer Testing**
+  - Unit tests for core functionality
+  - Integration tests for system behavior
+  - Stress tests for concurrent operations
+
+- **Docker-Based Testing**
+  - Consistent test environments
+  - Isolated execution
+  - Resource management
+
+---
+
 # Lessons Learned
 
 - Rust's safety guarantees shine in systems programming
