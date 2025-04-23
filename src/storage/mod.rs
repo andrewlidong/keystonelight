@@ -204,7 +204,9 @@ impl Database {
     /// use keystonelight::storage::Database;
     /// use std::fs;
     ///
-    /// let db = Database::new().unwrap();
+    /// // Create a new database with a unique log file
+    /// let log_path = "test_get.log";
+    /// let db = Database::with_log_path(log_path).unwrap();
     ///
     /// // Get non-existent key
     /// assert!(db.get("missing").is_none());
@@ -214,7 +216,7 @@ impl Database {
     /// assert_eq!(db.get("key1").unwrap(), b"value1");
     ///
     /// // Clean up
-    /// fs::remove_file("keystonelight.log").unwrap_or(());
+    /// fs::remove_file(log_path).unwrap_or(());
     /// ```
     pub fn get(&self, key: &str) -> Option<Vec<u8>> {
         self.cache.read().unwrap().get(key).cloned()
