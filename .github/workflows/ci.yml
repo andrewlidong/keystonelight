@@ -52,4 +52,7 @@ jobs:
 
       - name: Test Docker image
         run: |
-          docker run --rm keystonelight:latest --version
+          # Test serve command
+          docker run --rm keystonelight:latest serve --help
+          # Test client command
+          docker run --rm keystonelight:latest client --help
