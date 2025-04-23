@@ -112,7 +112,6 @@ graph TD
   - Clean shutdown handling
 
 - **Signal Handling**
-  - SIGHUP for compaction
   - Safe signal processing
   - OS integration
 
@@ -140,10 +139,8 @@ graph TD
 # Lessons Learned
 
 - Rust's safety guarantees shine in systems programming
-- Test-driven development is a must
-- Building from scratch reveals edge cases
+- Test-driven development is helpful
 - Concurrency requires careful coordination
-- OS integration adds complexity
 - Maintenance tasks are crucial
 
 ---
