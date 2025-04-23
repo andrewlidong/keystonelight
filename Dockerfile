@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.81-slim as builder
+FROM rust:latest as builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -13,15 +13,15 @@ WORKDIR /usr/src/keystonelight
 # Copy the source code
 COPY . .
 
-# Build the application
-RUN cargo build --release
+# Build with release optimizations
+RUN cargo build --release --verbose
 
-# Runtime stage
+# Create a smaller runtime image
 FROM debian:bookworm-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
-  ca-certificates \
+  libssl3 \
   && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user

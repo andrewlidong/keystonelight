@@ -1,36 +1,25 @@
 version: '3.8'
 
 services:
-  keystonelight:
+  app:
     build: .
     ports:
       - "7878:7878"
     volumes:
-      - keystonelight_data:/var/lib/keystonelight
-    environment:
-      - RUST_LOG=info
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "keystonelight-client", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - ./data:/data
+    command: keystonelight
 
   test:
     build:
       context: .
-      dockerfile: Dockerfile.test
+      target: builder
     volumes:
       - .:/usr/src/keystonelight
       - cargo-cache:/usr/local/cargo/registry
+    command: /bin/bash -c "while true; do sleep 1000; done"  # Keep container running
     environment:
       - RUST_BACKTRACE=1
-      - RUST_TEST_THREADS=8
-      - CARGO_BUILD_JOBS=8
-      - CARGO_TARGET_DIR=/usr/src/keystonelight/target
-      - CARGO_HOME=/usr/local/cargo
-    user: "${UID:-1000}:${GID:-1000}"
+      - RUST_TEST_THREADS=1
 
 volumes:
-  keystonelight_data:
-  cargo-cache:
+  cargo-cache: {}

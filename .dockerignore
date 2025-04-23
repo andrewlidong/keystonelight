@@ -1,24 +1,31 @@
 # Git
 .git
 .gitignore
+.github
 
 # Rust
-/target
+target/
 **/*.rs.bk
 Cargo.lock
 
-# IDE
-.vscode
-.idea
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Editor files
+.vscode/
+.idea/
 *.swp
 *.swo
 
-# Docker
-Dockerfile
-.dockerignore
+# Misc
+README.md
+LICENSE
+*.log
+data/
 
 # Logs and data
-*.log
 *.pid
 keystonelight.log
 keystonelight.pid

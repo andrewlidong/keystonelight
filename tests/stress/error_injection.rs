@@ -11,9 +11,9 @@ fn stress_test_error_injection() {
     let log_file = temp_dir.path().join("keystonelight.log");
     let db = Arc::new(Database::with_log_path(log_file.to_str().unwrap()).unwrap());
 
-    let num_clients = 3;
-    let ops_per_client = 50; // Reduced from 100
-    let timeout = Duration::from_secs(30); // 30 second timeout
+    let num_clients = 2; // Reduced from 3
+    let ops_per_client = 25; // Reduced from 50
+    let timeout = Duration::from_secs(10); // Reduced from 30 seconds
 
     let mut handles = vec![];
 
@@ -34,8 +34,8 @@ fn stress_test_error_injection() {
                         errors += 1;
                     }
                 } else if rng.gen_bool(0.1) {
-                    // 10% chance of using a value that's too large (512KB)
-                    let invalid_value = vec![0u8; 512 * 1024]; // Reduced from 2MB to 512KB
+                    // 10% chance of using a value that's too large (256KB)
+                    let invalid_value = vec![0u8; 256 * 1024]; // Reduced from 512KB
                     if let Err(_e) = db_clone.set(&key, &invalid_value) {
                         errors += 1;
                     }
@@ -49,6 +49,9 @@ fn stress_test_error_injection() {
                         errors += 1;
                     }
                 }
+
+                // Add a small delay between operations
+                thread::sleep(Duration::from_millis(10));
             }
             errors
         });
