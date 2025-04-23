@@ -319,3 +319,33 @@ OK
   - Rebuilds log file from cache state
   - Automatic when log size exceeds 1MB
 
+### Continuous Integration
+
+The project uses GitHub Actions for continuous integration. The CI pipeline includes:
+
+1. **Testing**:
+   - Runs on Ubuntu
+   - Uses stable Rust toolchain
+   - Comprehensive test suite execution
+   - Dependency caching for faster builds
+
+2. **Code Quality Checks**:
+   - Rustfmt for consistent code formatting
+   - Clippy for linting and catching common mistakes
+   - Build verification
+
+3. **Docker Integration**:
+   - Automated Docker image building
+   - Basic container verification
+   - Version compatibility check
+
+The CI pipeline runs automatically on:
+- Every push to the main branch
+- Every pull request targeting the main branch
+
+The pipeline ensures:
+- All code changes are properly tested
+- Code style and quality standards are maintained
+- The project builds correctly
+- Docker configuration remains functional
+
