@@ -3,13 +3,12 @@
 
 A lightweight, concurrent key-value database written in Rust, featuring in-memory storage with file persistence and proper Unix service behavior.
 
-
 ## Features
 
 ### Core Functionality
 - In-memory key-value storage with persistent file backup
 - Thread-safe concurrent operations using RwLock
-- Multi-threaded server with configurable thread pool (specify number of worker threads)
+- Multi-threaded server with configurable thread pool
 - TCP-based client-server communication
 - File-based storage with immediate persistence
 - Case-insensitive command handling
@@ -92,9 +91,25 @@ docker-compose up -d
 
 ## Testing
 
-### Local Testing
+The project includes a comprehensive test suite with the following components:
 
-Run the test suite locally:
+1. **Unit Tests**:
+   - Core functionality tests
+   - Data structure tests
+   - Error handling tests
+
+2. **Integration Tests**:
+   - Client-server interaction tests
+   - Data persistence tests
+   - Log compaction tests
+   - Binary data handling tests
+
+3. **Stress Tests**:
+   - Concurrent operation tests
+   - Resource usage tests
+   - Error injection tests
+
+### Local Testing
 ```bash
 # Run all tests
 cargo test --all --verbose
@@ -121,29 +136,10 @@ The Docker test environment provides:
 - Consistent dependencies
 - Proper cleanup after tests
 - Support for both regular and stress tests
-
-### Continuous Integration
-
-The project uses GitHub Actions for continuous integration. The CI pipeline includes:
-
-1. **Multi-Platform Testing**:
-   - Runs on Ubuntu and macOS
-   - Tests with stable and nightly Rust toolchains
-   - Ensures cross-platform compatibility
-
-2. **Code Quality Checks**:
-   - Rustfmt for consistent code formatting
-   - Clippy for linting and catching common mistakes
-   - Build verification on all platforms
-
-3. **Docker Testing**:
-   - Runs tests in an isolated Docker environment
-   - Verifies both regular and stress tests
-   - Ensures Docker configuration works correctly
-
-The CI pipeline runs automatically on:
-- Every push to the main branch
-- Every pull request targeting the main branch
+- All necessary build and test dependencies
+- Source code mounted as a volume for live updates
+- Environment variables for better test output
+- Single-threaded test execution by default
 
 ## Usage
 
@@ -195,7 +191,7 @@ The Docker version provides:
 
 #### Docker Volume
 Data is persisted in the `keystonelight_data` volume. To backup or migrate data:
-   ```bash
+```bash
 # Backup volume
 docker run --rm -v keystonelight_keystonelight_data:/source -v $(pwd):/backup alpine tar -czf /backup/keystonelight-backup.tar.gz -C /source .
 
@@ -254,6 +250,10 @@ test_value
 OK
 > COMPACT
 OK
+> SET binary_key \x00\x01\x02\x03
+OK
+> GET binary_key
+\x00\x01\x02\x03
 > exit
 Goodbye!
 ```
@@ -318,33 +318,4 @@ OK
   - O(n) where n is the number of unique keys
   - Rebuilds log file from cache state
   - Automatic when log size exceeds 1MB
-
-## Running Tests
-
-### Local Testing
-To run tests locally:
-
-```bash
-cargo test --all --verbose
-```
-
-### Docker Testing
-To run tests in Docker:
-
-```bash
-# Run all tests
-docker-compose run test
-
-# Run specific test
-docker-compose run test cargo test test_name -- --nocapture
-
-# Run tests with specific features
-docker-compose run test cargo test --features feature_name
-```
-
-The test container includes:
-- All necessary build and test dependencies
-- Source code mounted as a volume for live updates
-- Environment variables for better test output
-- Single-threaded test execution by default
 
