@@ -9,9 +9,11 @@
 //! ```
 //! use keystonelight::storage::Database;
 //! use std::fs;
+//! use std::path::Path;
 //!
-//! // Create a new database
-//! let db = Database::new().unwrap();
+//! // Create a new database with a unique log file
+//! let log_path = "test_db.log";
+//! let db = Database::with_log_path(log_path).unwrap();
 //!
 //! // Set a key-value pair
 //! db.set("key1", b"value1").unwrap();
@@ -24,7 +26,7 @@
 //! assert!(db.get("key1").is_none());
 //!
 //! // Clean up
-//! fs::remove_file("keystonelight.log").unwrap_or(());
+//! fs::remove_file(log_path).unwrap_or(());
 //! ```
 //!
 //! Binary data handling:
@@ -32,8 +34,10 @@
 //! ```
 //! use keystonelight::storage::Database;
 //! use std::fs;
+//! use std::path::Path;
 //!
-//! let db = Database::new().unwrap();
+//! let log_path = "test_db_binary.log";
+//! let db = Database::with_log_path(log_path).unwrap();
 //!
 //! // Store binary data
 //! let binary_data = vec![0, 1, 2, 3];
@@ -43,7 +47,7 @@
 //! assert_eq!(db.get("binary_key").unwrap(), binary_data);
 //!
 //! // Clean up
-//! fs::remove_file("keystonelight.log").unwrap_or(());
+//! fs::remove_file(log_path).unwrap_or(());
 //! ```
 
 use crate::storage::log::{LogEntry, LogFile};
@@ -254,7 +258,9 @@ impl Database {
     /// use keystonelight::storage::Database;
     /// use std::fs;
     ///
-    /// let db = Database::new().unwrap();
+    /// // Create a new database with a unique log file
+    /// let log_path = "test_delete.log";
+    /// let db = Database::with_log_path(log_path).unwrap();
     ///
     /// // Delete non-existent key
     /// db.delete("missing").unwrap();
@@ -265,7 +271,7 @@ impl Database {
     /// assert!(db.get("key1").is_none());
     ///
     /// // Clean up
-    /// fs::remove_file("keystonelight.log").unwrap_or(());
+    /// fs::remove_file(log_path).unwrap_or(());
     /// ```
     pub fn delete(&self, key: &str) -> io::Result<()> {
         let mut cache = self.cache.write().unwrap();
