@@ -31,7 +31,7 @@ style: |
 # Introduction
 
 - **Goal**: Learn systems programming topics by building from scratch
-- **Inspiration**: Redis-like server (Ian Fisher)
+- **Inspiration**: Redis-like server
 - **Key Features**:
   - In-memory storage with disk persistence
   - Basic operations (GET, SET, DELETE)
@@ -140,6 +140,7 @@ graph TD
 # Lessons Learned
 
 - Rust's safety guarantees shine in systems programming
+- Test-driven development is a must
 - Building from scratch reveals edge cases
 - Concurrency requires careful coordination
 - OS integration adds complexity
