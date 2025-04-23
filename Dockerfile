@@ -36,7 +36,7 @@ COPY --from=builder /usr/src/keystonelight/target/release/database /usr/local/bi
 COPY --from=builder /usr/src/keystonelight/target/release/client /usr/local/bin/keystonelight-client
 
 # Create entrypoint script
-RUN echo '#!/bin/sh\nif [ "$1" = "--version" ]; then\n  keystonelight --version\nelif [ "$1" = "serve" ]; then\n  exec keystonelight serve\nelse\n  exec "$@"\nfi' > /usr/local/bin/entrypoint.sh && \
+RUN echo '#!/bin/sh\nif [ "$1" = "serve" ]; then\n  exec keystonelight serve\nelif [ "$1" = "client" ]; then\n  exec keystonelight client\nelse\n  echo "Unknown command: $1"\n  echo "Usage: keystonelight [serve|client] [num_threads]"\n  exit 1\nfi' > /usr/local/bin/entrypoint.sh && \
   chmod +x /usr/local/bin/entrypoint.sh
 
 # Set the working directory
