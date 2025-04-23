@@ -43,7 +43,6 @@ A lightweight, concurrent key-value database written in Rust, featuring in-memor
 - Docker containerization with volume support
 
 ### Documentation
-- Comprehensive documentation tests for all public APIs
 - Inline code examples in documentation
 - Detailed module and function documentation
 - Usage examples for all major components
@@ -275,7 +274,7 @@ OK
 - Multi-threaded TCP server
 - Configurable thread pool for connection handling
 - Dynamic worker thread allocation
-- Connection queuing and load balancing
+- Connection queuing
 - In-memory storage with file persistence
 - Log-based storage system
 - Automatic compaction
