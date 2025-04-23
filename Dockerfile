@@ -35,6 +35,10 @@ RUN mkdir -p /var/lib/keystonelight && \
 COPY --from=builder /usr/src/keystonelight/target/release/database /usr/local/bin/keystonelight
 COPY --from=builder /usr/src/keystonelight/target/release/client /usr/local/bin/keystonelight-client
 
+# Create entrypoint script
+RUN echo '#!/bin/sh\nif [ "$1" = "--version" ]; then\n  keystonelight --version\nelif [ "$1" = "serve" ]; then\n  exec keystonelight serve\nelse\n  exec "$@"\nfi' > /usr/local/bin/entrypoint.sh && \
+  chmod +x /usr/local/bin/entrypoint.sh
+
 # Set the working directory
 WORKDIR /var/lib/keystonelight
 
@@ -47,5 +51,8 @@ EXPOSE 7878
 # Set environment variables
 ENV RUST_LOG=info
 
-# Run the server
-CMD ["keystonelight", "serve"]
+# Set the entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default command
+CMD ["serve"]
