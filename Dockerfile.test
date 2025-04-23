@@ -10,8 +10,10 @@ RUN apt-get update && apt-get install -y \
 # Create a new empty shell project
 WORKDIR /usr/src/keystonelight
 
-# Copy the source code
+# Copy the entire project
 COPY . .
 
-# Run tests
-CMD ["cargo", "test", "--all", "--verbose"]
+# Run tests with parallel execution and minimal compilation
+ENV RUST_TEST_THREADS=8
+ENV RUSTC_FLAGS="-C opt-level=0 -C debuginfo=0"
+CMD ["cargo", "test", "--all", "--verbose", "--no-default-features", "--", "--nocapture", "--test-threads=8"]

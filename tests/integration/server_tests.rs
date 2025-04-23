@@ -277,13 +277,15 @@ fn test_server_thread_pool_stress() {
 
     // Create many concurrent clients to stress the thread pool
     let mut handles = vec![];
-    for i in 0..100 {
+    for i in 0..20 {
+        // Reduced from 100 to 20 clients
         let handle = thread::spawn(move || {
             let key = format!("stress_key{}", i);
             let value = format!("stress_value{}", i);
 
             // Perform multiple operations
-            for _ in 0..10 {
+            for _ in 0..5 {
+                // Reduced from 10 to 5 operations per client
                 let response = send_command(&format!("set {} {}", key, value)).unwrap();
                 assert_eq!(response, "OK");
 

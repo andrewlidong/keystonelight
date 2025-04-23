@@ -22,9 +22,15 @@ services:
       dockerfile: Dockerfile.test
     volumes:
       - .:/usr/src/keystonelight
+      - cargo-cache:/usr/local/cargo/registry
     environment:
       - RUST_BACKTRACE=1
-      - RUST_TEST_THREADS=1
+      - RUST_TEST_THREADS=8
+      - CARGO_BUILD_JOBS=8
+      - CARGO_TARGET_DIR=/usr/src/keystonelight/target
+      - CARGO_HOME=/usr/local/cargo
+    user: "${UID:-1000}:${GID:-1000}"
 
 volumes:
   keystonelight_data:
+  cargo-cache:

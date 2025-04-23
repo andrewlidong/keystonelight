@@ -33,3 +33,125 @@ Implementing signal handling in Rust was an enlightening experience. In C, one m
 Building Keystonelight was a challenging but rewarding journey through the landscape of systems programming. In about five minutes, I've touched on how I implemented its key features – from an in-memory storage engine with an append-only log and compaction, to a multi-threaded server architecture using locks for thread safety, to the nuts and bolts of network I/O and signal handling. Each component taught me something valuable. Concurrency, for instance, went from an abstract concept to something very concrete: I had to debug real race conditions and lock contention issues, which gave me intuition about why things like read-write locks are useful.  Implementing file persistence and compaction made me appreciate the simplicity and robustness of log-structured designs, but also the need for background maintenance to reclaim space.  Working with the network stack at a low level, I learned how a server actually accepts and manages multiple socket connections, which demystified a lot of what happens inside higher-level frameworks. And handling Unix signals and process IDs connected my program to the operating system control mechanisms, something many high-level application developers never deal with directly.
 
 Perhaps the biggest takeaway is that building a system from scratch forces you to confront the edge cases and hard problems that real-world software deals with. There were moments when I thought, "Why isn't there just a library to do X for me?" – and of course, in production you would use libraries for many of these tasks. But doing it the hard way (at least once) was incredibly educational. It gave me a deeper appreciation for the engineers who create database systems and servers. Even this modest key-value store, while far from production-ready, has so many moving parts that all have to work in concert: memory management, disk I/O, concurrency, consistency, crash recovery, etc. The project also showed me the strengths of Rust for systems programming. Despite dealing with threads, shared memory, and signals – which are traditionally recipes for bugs – Rust's safety guarantees and well-designed std library meant I never had a segfault or memory leak. I certainly had logic bugs while developing (e.g. forgetting to flush the file, or mishandling a lock ordering early on), but once those were fixed, I could run the server under load or kill -9 it and things behaved as expected. For a highly technical audience like this one, I hope this overview provided insight into how one can apply systems-level concepts in a hands-on project. Keystonelight might be "light" in name, but the lessons learned from building it carry a lot of weight for me as a developer.
+
+## Testing Strategy
+
+A key aspect of building a reliable database system is comprehensive testing. For Keystonelight, I implemented a multi-layered testing strategy that covers everything from basic functionality to stress testing under concurrent load.
+
+### Unit and Integration Tests
+
+The foundation of our testing pyramid consists of unit and integration tests. These tests verify core functionality like:
+- Basic CRUD operations (Create, Read, Update, Delete)
+- Data persistence across restarts
+- Log compaction
+- Binary data handling
+- Error cases and edge conditions
+
+For example, here's a test that verifies data persistence:
+```rust
+#[test]
+fn test_persistence() {
+    let temp_dir = tempdir().unwrap();
+    let log_file = temp_dir.path().join("keystonelight.log");
+
+    // First instance: write data
+    let db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
+    db.set("key1", b"value1").unwrap();
+    db.set("key2", b"value2").unwrap();
+    drop(db);
+
+    // Second instance: verify data
+    let db = Database::with_log_path(log_file.to_str().unwrap()).unwrap();
+    assert_eq!(db.get("key1"), Some(b"value1".to_vec()));
+    assert_eq!(db.get("key2"), Some(b"value2".to_vec()));
+}
+```
+
+### Stress Testing
+
+Beyond basic functionality, we need to ensure the system performs reliably under load. The stress tests simulate real-world usage patterns:
+
+1. **Concurrent Operations**: Multiple clients performing random operations simultaneously
+2. **Large Data**: Handling values up to 1MB in size
+3. **Many Clients**: Testing with up to 20 concurrent clients
+4. **Error Injection**: Testing system behavior with invalid inputs
+5. **Persistence Under Load**: Verifying data integrity after heavy concurrent writes
+
+Here's an example of a stress test that simulates multiple clients:
+```rust
+#[test]
+fn stress_test_concurrent_operations() {
+    let db = Arc::new(Database::with_log_path(log_file).unwrap());
+    let num_clients = 5;
+    let ops_per_client = 200;
+
+    let mut handles = vec![];
+    for client_id in 0..num_clients {
+        let db_clone = db.clone();
+        let handle = thread::spawn(move || {
+            let mut rng = rand::thread_rng();
+            for i in 0..ops_per_client {
+                let key = format!("key_{}_{}", client_id, i);
+                let value = format!("value_{}_{}", client_id, i).into_bytes();
+
+                match rng.gen_range(0..3) {
+                    0 => { db_clone.set(&key, &value).unwrap(); }
+                    1 => { db_clone.get(&key); }
+                    2 => { db_clone.delete(&key).unwrap(); }
+                    _ => unreachable!(),
+                }
+            }
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+}
+```
+
+### Testing Infrastructure
+
+To support these tests, we've built several testing utilities:
+- Temporary directory management using the `tempdir` crate for isolated test runs
+- File synchronization helpers to ensure writes are complete
+- Cleanup routines to remove test artifacts
+- Basic test organization with separate files for different test types (storage, server, stress tests)
+
+The testing infrastructure is designed to be:
+- **Reproducible**: Tests run the same way every time
+- **Isolated**: Each test has its own clean environment
+- **Fast**: Tests run in parallel where possible
+- **Comprehensive**: Covering both happy paths and error cases
+
+### Continuous Integration
+
+The project uses GitHub Actions for continuous integration, with a comprehensive CI pipeline that ensures code quality and reliability. The pipeline includes:
+
+1. **Multi-Platform Testing**:
+   - Runs on both Ubuntu and macOS
+   - Tests with both stable and nightly Rust toolchains
+   - Ensures cross-platform compatibility
+
+2. **Code Quality Checks**:
+   - Rustfmt for consistent code formatting
+   - Clippy for linting and catching common mistakes
+   - Build verification on all platforms
+
+3. **Docker Testing**:
+   - Runs tests in an isolated Docker environment
+   - Ensures consistent test execution across different environments
+   - Verifies the Docker configuration works correctly
+
+The CI pipeline runs automatically on:
+- Every push to the main branch
+- Every pull request targeting the main branch
+
+This ensures that:
+- All code changes are properly tested
+- Code style and quality standards are maintained
+- The project builds and runs correctly across different environments
+- Docker-based testing remains functional
+
+The pipeline is configured to fail if any of these checks don't pass, maintaining high code quality standards and preventing regressions.

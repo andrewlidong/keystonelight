@@ -90,6 +90,61 @@ docker-compose up -d
 - `cargo test`: Run all tests including integration tests
 - `cargo test --doc`: Run documentation tests to verify code examples
 
+## Testing
+
+### Local Testing
+
+Run the test suite locally:
+```bash
+# Run all tests
+cargo test --all --verbose
+
+# Run specific test categories
+cargo test --test integration_tests  # Integration tests
+cargo test --test stress_tests      # Stress tests
+```
+
+### Docker Testing
+
+The project includes Docker-based testing for consistent test environments:
+
+```bash
+# Run regular tests in Docker
+docker-compose run --rm test
+
+# Run stress tests in Docker
+docker-compose run --rm stress-test
+```
+
+The Docker test environment provides:
+- Isolated test execution
+- Consistent dependencies
+- Proper cleanup after tests
+- Support for both regular and stress tests
+
+### Continuous Integration
+
+The project uses GitHub Actions for continuous integration. The CI pipeline includes:
+
+1. **Multi-Platform Testing**:
+   - Runs on Ubuntu and macOS
+   - Tests with stable and nightly Rust toolchains
+   - Ensures cross-platform compatibility
+
+2. **Code Quality Checks**:
+   - Rustfmt for consistent code formatting
+   - Clippy for linting and catching common mistakes
+   - Build verification on all platforms
+
+3. **Docker Testing**:
+   - Runs tests in an isolated Docker environment
+   - Verifies both regular and stress tests
+   - Ensures Docker configuration works correctly
+
+The CI pipeline runs automatically on:
+- Every push to the main branch
+- Every pull request targeting the main branch
+
 ## Usage
 
 ### Local Usage
