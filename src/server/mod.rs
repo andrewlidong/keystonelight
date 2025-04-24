@@ -65,7 +65,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 /// The address the server listens on
-const SERVER_ADDR: &str = "127.0.0.1:7878";
+const SERVER_ADDR: &str = "0.0.0.0:7878";
 /// Maximum time to wait for port binding
 const BIND_TIMEOUT: Duration = Duration::from_secs(5);
 /// Interval between port binding retries

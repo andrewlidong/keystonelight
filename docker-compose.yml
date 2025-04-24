@@ -7,7 +7,15 @@ services:
       - "7878:7878"
     volumes:
       - ./data:/data
-    command: keystonelight
+    command: serve
+
+  client:
+    build: .
+    volumes:
+      - ./data:/data
+    environment:
+      - KEYSTONELIGHT_SERVER_ADDR=app:7878
+    command: client
 
   test:
     build:

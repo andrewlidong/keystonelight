@@ -48,11 +48,12 @@ use crate::protocol::parse_command;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
+use std::env;
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
 
 /// The server address to connect to
-const SERVER_ADDR: &str = "127.0.0.1:7878";
+const DEFAULT_SERVER_ADDR: &str = "127.0.0.1:7878";
 
 /// A client connection to the key-value database server.
 ///
@@ -91,7 +92,10 @@ impl Client {
     /// println!("Connected to server successfully!");
     /// ```
     pub fn new() -> io::Result<Self> {
-        let stream = TcpStream::connect(SERVER_ADDR)?;
+        let server_addr = env::var("KEYSTONELIGHT_SERVER_ADDR")
+            .unwrap_or_else(|_| DEFAULT_SERVER_ADDR.to_string());
+        println!("Connecting to database server at {}...", server_addr);
+        let stream = TcpStream::connect(server_addr)?;
         let reader = BufReader::new(stream.try_clone()?);
         Ok(Client { stream, reader })
     }
@@ -201,7 +205,10 @@ impl Client {
 /// run_interactive().unwrap();
 /// ```
 pub fn run_interactive() -> io::Result<()> {
-    println!("Connecting to database server at {}...", SERVER_ADDR);
+    println!(
+        "Connecting to database server at {}...",
+        DEFAULT_SERVER_ADDR
+    );
     let mut client = Client::new()?;
     println!("Connected successfully!");
     println!("Enter commands (type 'help' for usage, 'quit' to exit):");

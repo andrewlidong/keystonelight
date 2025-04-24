@@ -53,6 +53,18 @@ jobs:
       - name: Test Docker image
         run: |
           # Test serve command
-          docker run --rm keystonelight:latest serve --help
+          docker run --rm keystonelight:latest serve
           # Test client command
-          docker run --rm keystonelight:latest client --help
+          docker run --rm keystonelight:latest client
+
+      - name: Test docker-compose
+        run: |
+          # Start the server
+          docker-compose up -d app
+          # Wait for server to start
+          sleep 5
+          # Test basic operations
+          echo "SET test hello" | nc localhost 7878
+          echo "GET test" | nc localhost 7878
+          # Clean up
+          docker-compose down
