@@ -140,6 +140,51 @@ The Docker test environment provides:
 - Environment variables for better test output
 - Single-threaded test execution by default
 
+## Quick Start
+
+### Running with Docker
+
+Start the server:
+```bash
+docker-compose up app
+```
+
+Run the client:
+```bash
+docker-compose run --rm app client [num_threads]
+```
+
+Run stress tests:
+```bash
+docker-compose run --rm app client 8  # Use 8 worker threads for stress testing
+```
+
+### Direct Usage
+
+Start the server:
+```bash
+keystonelight serve [num_threads]
+```
+
+Run the client:
+```bash
+keystonelight client [num_threads]
+```
+
+The `num_threads` parameter is optional and defaults to 4 if not specified.
+
+### Command Reference
+
+Server Commands:
+- `serve`: Start the server
+- `client`: Run the client
+
+Client Commands:
+- `SET <key> <value>`: Store a key-value pair
+- `GET <key>`: Retrieve a value
+- `DELETE <key>`: Remove a key-value pair
+- `COMPACT`: Trigger log compaction
+
 ## Usage
 
 ### Local Usage
@@ -161,41 +206,94 @@ cargo run --bin client
 
 ### Docker Usage
 
-#### Starting the Service
+#### Basic Commands
 ```bash
-# Start the containerized service
-docker-compose up -d
+# Build and start the server
+docker-compose up --build app
 
-# View logs
-docker-compose logs -f
+# Run the client in a new terminal
+docker-compose run --rm app client
 
-# Connect to the database using the client
-docker-compose exec keystonelight keystonelight-client
-
-# Stop the service
+# Stop the server
 docker-compose down
 ```
 
-The Docker version provides:
-- Persistent storage using Docker volumes
-- Automatic container restart
-- Health monitoring
-- Process isolation
-- Port mapping (7878)
-- Non-root user execution
-
-#### Docker Environment Variables
-- `RUST_LOG`: Set logging level (default: info)
-- `THREAD_COUNT`: Number of worker threads (default: 4)
-
-#### Docker Volume
-Data is persisted in the `keystonelight_data` volume. To backup or migrate data:
+#### Advanced Usage
 ```bash
-# Backup volume
-docker run --rm -v keystonelight_keystonelight_data:/source -v $(pwd):/backup alpine tar -czf /backup/keystonelight-backup.tar.gz -C /source .
+# Start server with custom thread count (e.g., 8 threads)
+docker-compose run --rm app serve 8
 
-# Restore volume
-docker run --rm -v keystonelight_keystonelight_data:/target -v $(pwd):/backup alpine sh -c "rm -rf /target/* && tar -xzf /backup/keystonelight-backup.tar.gz -C /target"
+# Run client with specific commands
+echo "SET mykey myvalue" | docker-compose run --rm app client
+echo "GET mykey" | docker-compose run --rm app client
+
+# Run tests
+docker-compose run --rm test cargo test integration  # Run integration tests
+docker-compose run --rm test cargo test stress      # Run stress tests
+```
+
+#### Container Management
+```bash
+# View logs
+docker-compose logs app
+
+# Restart the server
+docker-compose restart app
+
+# Check container status
+docker-compose ps
+```
+
+#### Data Management
+The server stores its data in a Docker volume. Here's how to manage it:
+
+```bash
+# List volumes
+docker volume ls | grep keystonelight
+
+# Backup data
+docker run --rm -v keystonelight_data:/source -v $(pwd):/backup \
+    alpine tar -czf /backup/keystonelight-backup.tar.gz -C /source .
+
+# Restore data
+docker run --rm -v keystonelight_data:/target -v $(pwd):/backup \
+    alpine sh -c "rm -rf /target/* && tar -xzf /backup/keystonelight-backup.tar.gz -C /target"
+
+# Clean up data (warning: this deletes all data)
+docker-compose down -v
+```
+
+#### Environment Variables
+You can customize the server behavior using environment variables in `docker-compose.yml`:
+
+```yaml
+environment:
+  - RUST_LOG=info        # Logging level (debug, info, warn, error)
+  - THREAD_COUNT=4       # Number of worker threads
+```
+
+#### Troubleshooting
+If you encounter issues:
+
+1. Check server status:
+   ```bash
+   docker-compose ps
+   ```
+
+2. View server logs:
+   ```bash
+   docker-compose logs app
+   ```
+
+3. Restart the server:
+   ```bash
+   docker-compose restart app
+   ```
+
+4. Clean restart:
+   ```bash
+   docker-compose down
+   docker-compose up --build app
    ```
 
 ### Performance Tuning

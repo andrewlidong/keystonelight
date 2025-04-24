@@ -52,19 +52,25 @@ jobs:
 
       - name: Test Docker image
         run: |
-          # Test serve command
-          docker run --rm keystonelight:latest serve
+          # Test serve command in background with timeout
+          timeout 10s docker run --rm keystonelight:latest serve &
+          # Wait for server to start
+          sleep 5
+          # Kill the server after tests
+          pkill -f "keystonelight serve" || true
           # Test client command
           docker run --rm keystonelight:latest client
 
       - name: Test docker-compose
         run: |
-          # Start the server
-          docker-compose up -d app
+          # Start the server with timeout
+          timeout 30s docker-compose up app &
           # Wait for server to start
           sleep 5
           # Test basic operations
           echo "SET test hello" | nc localhost 7878
           echo "GET test" | nc localhost 7878
           # Clean up
-          docker-compose down
+          docker-compose down --remove-orphans
+          # Make sure all containers are stopped
+          docker ps -q | xargs -r docker stop
