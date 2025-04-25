@@ -209,10 +209,10 @@ cargo run --bin client
 #### Basic Commands
 ```bash
 # Build and start the server
-docker-compose up --build app
+docker-compose up --build -d app
 
 # Run the client in a new terminal
-docker-compose run --rm app client
+docker-compose run --rm client
 
 # Stop the server
 docker-compose down
@@ -223,9 +223,9 @@ docker-compose down
 # Start server with custom thread count (e.g., 8 threads)
 docker-compose run --rm app serve 8
 
-# Run client with specific commands
-echo "SET mykey myvalue" | docker-compose run --rm app client
-echo "GET mykey" | docker-compose run --rm app client
+# Run client with specific commands (note the -T flag for piping input)
+echo "SET mykey myvalue" | docker-compose run --rm -T client
+echo "GET mykey" | docker-compose run --rm -T client
 
 # Run tests
 docker-compose run --rm test cargo test integration  # Run integration tests
@@ -293,7 +293,7 @@ If you encounter issues:
 4. Clean restart:
    ```bash
    docker-compose down
-   docker-compose up --build app
+   docker-compose up --build -d app
    ```
 
 ### Performance Tuning
@@ -319,7 +319,14 @@ Start an interactive session with the database:
 cargo run --bin client
 
 # Docker
-docker-compose exec keystonelight keystonelight-client
+docker-compose run --rm client
+```
+
+For non-interactive operations (piping commands):
+```bash
+# Docker with piped commands
+echo "SET test_key test_value" | docker-compose run --rm -T client
+echo "GET test_key" | docker-compose run --rm -T client
 ```
 
 The client provides an interactive prompt with the following features:
